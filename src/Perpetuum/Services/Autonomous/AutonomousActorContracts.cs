@@ -51,7 +51,7 @@ namespace Perpetuum.Services.Autonomous
         void Stop(GameActionContext context);
     }
 
-    public delegate IAutonomousActorBehavior AutonomousActorBehaviorFactory(string name);
+    public delegate IAutonomousActorBehavior AutonomousActorBehaviorFactory(AutonomousActorDefinition definition);
 
     public interface IAutonomousActorRegistry
     {

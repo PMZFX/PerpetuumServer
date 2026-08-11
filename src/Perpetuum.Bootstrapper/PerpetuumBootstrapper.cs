@@ -1620,16 +1620,23 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<AutonomousActorRegistry>().As<IAutonomousActorRegistry>().SingleInstance();
             _ = _builder.RegisterType<IdleAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("idle");
+            _ = _builder.RegisterType<AutonomousNavigationService>()
+                .As<IAutonomousNavigationService>();
+            _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();
-                return name =>
+                return definition =>
                 {
-                    string behaviorName = string.IsNullOrWhiteSpace(name) ? "idle" : name;
+                    string behaviorName = string.IsNullOrWhiteSpace(definition.Behavior)
+                        ? "idle"
+                        : definition.Behavior.Trim().ToLowerInvariant();
                     if (!context.IsRegisteredWithKey<IAutonomousActorBehavior>(behaviorName))
                         throw new InvalidOperationException($"Unknown autonomous behavior '{behaviorName}'.");
 
-                    return context.ResolveKeyed<IAutonomousActorBehavior>(behaviorName);
+                    return context.ResolveKeyed<IAutonomousActorBehavior>(behaviorName,
+                        new TypedParameter(typeof(AutonomousActorDefinition), definition));
                 };
             }).SingleInstance();
             _ = _builder.RegisterType<AutonomousActor>().As<IAutonomousActor>();

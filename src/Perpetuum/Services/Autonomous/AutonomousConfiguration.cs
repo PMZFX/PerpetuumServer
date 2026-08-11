@@ -36,6 +36,16 @@ namespace Perpetuum.Services.Autonomous
             var duplicate = Actors.GroupBy(actor => actor.CharacterId).FirstOrDefault(group => group.Count() > 1);
             if (duplicate != null)
                 throw new InvalidOperationException($"Autonomous character {duplicate.Key} is configured more than once.");
+
+            foreach (AutonomousActorDefinition actor in Actors)
+            {
+                if (string.Equals(actor.Behavior?.Trim(), "patrol", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Patrol == null)
+                        throw new InvalidOperationException($"Autonomous patrol options for character {actor.CharacterId} cannot be null.");
+                    actor.Patrol.Validate(actor.CharacterId);
+                }
+            }
         }
     }
 
@@ -48,5 +58,37 @@ namespace Perpetuum.Services.Autonomous
 
         [DefaultValue("idle"), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public string Behavior { get; set; } = "idle";
+
+        public AutonomousPatrolOptions Patrol { get; set; } = new AutonomousPatrolOptions();
+    }
+
+    public sealed class AutonomousPatrolOptions
+    {
+        [DefaultValue(14), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int Radius { get; set; } = 14;
+
+        [DefaultValue(0.45), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double Throttle { get; set; } = 0.45;
+
+        [DefaultValue(15), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int DockedDwellSeconds { get; set; } = 15;
+
+        [DefaultValue(2), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int FieldDwellSeconds { get; set; } = 2;
+
+        public void Validate(int characterId)
+        {
+            if (Radius < 4 || Radius > 48)
+                throw new InvalidOperationException($"Autonomous patrol radius for character {characterId} must be between 4 and 48.");
+
+            if (double.IsNaN(Throttle) || double.IsInfinity(Throttle) || Throttle < 0.1 || Throttle > 1.0)
+                throw new InvalidOperationException($"Autonomous patrol throttle for character {characterId} must be between 0.1 and 1.0.");
+
+            if (DockedDwellSeconds < 0 || DockedDwellSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous docked dwell for character {characterId} must be between 0 and 3600 seconds.");
+
+            if (FieldDwellSeconds < 0 || FieldDwellSeconds > 300)
+                throw new InvalidOperationException($"Autonomous field dwell for character {characterId} must be between 0 and 300 seconds.");
+        }
     }
 }

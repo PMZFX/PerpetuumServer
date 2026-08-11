@@ -115,6 +115,44 @@ configured character suspends its autonomous controller; it resumes only after
 the human relay and zone sessions release that character. The idle behavior
 performs no actions and is intended to validate lifecycle and configuration.
 
+The first visible field behavior is a bounded patrol. It uses the same typed
+undock, movement-input, and dock services as a client character. The AI never
+sets its position or speed: A* selects ordinary walkable cells, while the
+existing player simulation continues to enforce robot speed, slope, collision,
+effects, and docking range. Path searches are locally bounded and a stationary
+actor stops, replans twice, then reports a blocked route.
+
+```json
+"Autonomous": {
+  "Enabled": true,
+  "TickIntervalMilliseconds": 500,
+  "MaxConsecutiveFailures": 3,
+  "Actors": [
+    {
+      "CharacterId": 123,
+      "Enabled": true,
+      "Behavior": "patrol",
+      "Patrol": {
+        "Radius": 14,
+        "Throttle": 0.45,
+        "DockedDwellSeconds": 15,
+        "FieldDwellSeconds": 2
+      }
+    }
+  ]
+}
+```
+
+On each field entry, the headless session applies the same teleport-sickness
+and invulnerability effects as a normal zone session. A human login still wins
+ownership immediately; the patrol plan is discarded and is rebuilt only after
+the human session releases the character.
+
+If a controlled shutdown persists an autonomous character in the field, the
+next enabled startup reloads that real character through the same player loader
+used by client zone authentication. Patrol recovery prioritizes a normal return
+to the character's current docking base before beginning another cycle.
+
 Stop with enough time for zone-layer persistence:
 
 ```bash

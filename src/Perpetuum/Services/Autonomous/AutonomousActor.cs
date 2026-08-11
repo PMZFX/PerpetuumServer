@@ -16,6 +16,8 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousActorAudit _audit;
         private readonly AutonomousZoneSession _zoneSession = new AutonomousZoneSession();
         private readonly GameActionContext _context;
+        private Player _initializedPlayer;
+        private bool _behaviorRunning;
         private string _reason;
 
         public AutonomousActor(
@@ -32,7 +34,7 @@ namespace Perpetuum.Services.Autonomous
             _character = characterFactory(definition.CharacterId);
             _sessionManager = sessionManager;
             _zoneManager = zoneManager;
-            _behavior = behaviorFactory(definition.Behavior);
+            _behavior = behaviorFactory(definition);
             _audit = audit;
             _context = new GameActionContext(_character, GameActionSource.Autonomous);
         }
@@ -52,7 +54,6 @@ namespace Perpetuum.Services.Autonomous
 
             _reason = null;
             Status = AutonomousActorStatus.Standby;
-            _behavior.Start(_context);
             _audit.Write(CharacterId, "started", Status);
         }
 
@@ -61,8 +62,8 @@ namespace Perpetuum.Services.Autonomous
             if (Status == AutonomousActorStatus.Stopped)
                 return;
 
+            StopBehavior();
             StopPlayerMovementAndReleaseSession();
-            _behavior.Stop(_context);
             _reason = null;
             Status = AutonomousActorStatus.Stopped;
             _audit.Write(CharacterId, "stopped", Status);
@@ -80,6 +81,17 @@ namespace Perpetuum.Services.Autonomous
             }
 
             Player player = _zoneManager.GetPlayer(_character);
+            if (player == null && !_character.IsDocked && _character.ZoneId.HasValue)
+            {
+                IZone persistedZone = _zoneManager.GetZone(_character.ZoneId.Value);
+                if (persistedZone == null)
+                    throw new InvalidOperationException($"Autonomous character {CharacterId} has unknown persisted zone {_character.ZoneId.Value}.");
+
+                player = Player.LoadPlayerAndAddToZone(persistedZone, _character);
+                _audit.Write(CharacterId, "world_restored", Status, $"zone_{persistedZone.Id}");
+            }
+            if (player == null)
+                _initializedPlayer = null;
             if (player != null && player.Session != ZoneSession.None && player.Session != _zoneSession)
             {
                 Suspend("external_zone_session");
@@ -89,10 +101,18 @@ namespace Perpetuum.Services.Autonomous
             if (player != null && player.Session == ZoneSession.None)
             {
                 player.SetSession(_zoneSession);
+                if (player != _initializedPlayer)
+                {
+                    player.ApplyTeleportSicknessEffect();
+                    player.ApplyInvulnerableEffect();
+                    _initializedPlayer = player;
+                }
             }
 
             if (Status != AutonomousActorStatus.Active)
             {
+                _behavior.Start(_context);
+                _behaviorRunning = true;
                 _reason = null;
                 Status = AutonomousActorStatus.Active;
                 _audit.Write(CharacterId, "resumed", Status);
@@ -103,6 +123,7 @@ namespace Perpetuum.Services.Autonomous
 
         public void Fault(string reason)
         {
+            StopBehavior();
             StopPlayerMovementAndReleaseSession();
             _reason = string.IsNullOrWhiteSpace(reason) ? "behavior_failure" : reason;
             Status = AutonomousActorStatus.Faulted;
@@ -114,6 +135,7 @@ namespace Perpetuum.Services.Autonomous
             if (Status == AutonomousActorStatus.Suspended && _reason == reason)
                 return;
 
+            StopBehavior();
             StopPlayerMovementAndReleaseSession();
             _reason = reason;
             Status = AutonomousActorStatus.Suspended;
@@ -128,6 +150,15 @@ namespace Perpetuum.Services.Autonomous
 
             player.CurrentSpeed = 0;
             player.SetSession(ZoneSession.None);
+        }
+
+        private void StopBehavior()
+        {
+            if (!_behaviorRunning)
+                return;
+
+            _behavior.Stop(_context);
+            _behaviorRunning = false;
         }
     }
 }
