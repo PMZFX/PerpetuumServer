@@ -1608,6 +1608,7 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<MarketBuyActionService>().As<IMarketBuyActionService>();
             _ = _builder.RegisterType<MarketCreateSellOrderActionService>().As<IMarketCreateSellOrderActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
+            _ = _builder.RegisterType<MovementInputService>().As<IMovementInputService>().SingleInstance();
 
             _ = _builder.RegisterType<MarketHelper>().SingleInstance();
             _ = _builder.RegisterType<MarketHandler>().SingleInstance();

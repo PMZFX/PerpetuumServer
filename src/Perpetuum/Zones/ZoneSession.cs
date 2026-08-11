@@ -23,6 +23,7 @@ using Perpetuum.Players;
 using Perpetuum.Reactive;
 using Perpetuum.Robots;
 using Perpetuum.Services.Looting;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.Sessions;
 using Perpetuum.Services.Weather;
 using Perpetuum.Timers;
@@ -42,7 +43,9 @@ namespace Perpetuum.Zones
 
         private readonly IZone _zone;
         private readonly ISessionManager _sessionManager;
+        private readonly IMovementInputService _movementInputService;
         private readonly EncryptedTcpConnection _connection;
+        private GameActionContext _actionContext;
 
         public Character Character { get; private set; } = Character.None;
         private Player _player;
@@ -55,7 +58,11 @@ namespace Perpetuum.Zones
 
         public delegate ZoneSession Factory(IZone zone,Socket socket);
 
-        public ZoneSession(IZone zone,Socket socket,ISessionManager sessionManager)
+        public ZoneSession(
+            IZone zone,
+            Socket socket,
+            ISessionManager sessionManager,
+            IMovementInputService movementInputService)
         {
             Id = _idGenerator.GetNextID();
             _zone = zone;
@@ -63,6 +70,7 @@ namespace Perpetuum.Zones
             _connection.Received += OnReceived;
             _connection.Disconnected += OnDisconnected;
             _sessionManager = sessionManager;
+            _movementInputService = movementInputService;
         }
 
         public void Start()
@@ -268,6 +276,7 @@ namespace Perpetuum.Zones
             Logger.Info($"Socket authentication successful. zone: {_zone.Id} character: {character.Id}");
             Character = character;
             AccessLevel = character.AccessLevel;
+            _actionContext = new GameActionContext(character, GameActionSource.Client);
 
             if (!_zone.TryGetPlayer(character, out Player player))
             {
@@ -321,8 +330,7 @@ namespace Perpetuum.Zones
             if (!player.TryMove(position))
                 throw new PerpetuumException(ErrorCodes.InvalidMovement);
 
-            player.CurrentSpeed = speed;
-            player.Direction = direction;
+            _movementInputService.Apply(_actionContext, new MovementInput(direction, speed));
         }
 
         private void HandleMoveForward(Packet packet)
@@ -330,8 +338,7 @@ namespace Perpetuum.Zones
             var direction = (double)packet.ReadUShort() / ushort.MaxValue;
             var speed = (double)packet.ReadUShort() / ushort.MaxValue;
 
-            _player.Direction = direction;
-            _player.CurrentSpeed = speed;
+            _movementInputService.Apply(_actionContext, new MovementInput(direction, speed));
         }
 
         private static void HandlePing(Packet packet)
