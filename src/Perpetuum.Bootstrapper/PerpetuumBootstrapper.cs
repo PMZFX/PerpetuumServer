@@ -1622,6 +1622,8 @@ namespace Perpetuum.Bootstrapper
                 .Keyed<IAutonomousActorBehavior>("idle");
             _ = _builder.RegisterType<AutonomousNavigationService>()
                 .As<IAutonomousNavigationService>();
+            _ = _builder.RegisterType<AutonomousPerceptionService>()
+                .As<IAutonomousPerceptionService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>

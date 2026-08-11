@@ -76,6 +76,8 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(2), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int FieldDwellSeconds { get; set; } = 2;
 
+        public AutonomousThreatOptions Threat { get; set; } = new AutonomousThreatOptions();
+
         public void Validate(int characterId)
         {
             if (Radius < 4 || Radius > 48)
@@ -89,6 +91,32 @@ namespace Perpetuum.Services.Autonomous
 
             if (FieldDwellSeconds < 0 || FieldDwellSeconds > 300)
                 throw new InvalidOperationException($"Autonomous field dwell for character {characterId} must be between 0 and 300 seconds.");
+
+            if (Threat == null)
+                throw new InvalidOperationException($"Autonomous threat options for character {characterId} cannot be null.");
+
+            Threat.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousThreatOptions
+    {
+        [DefaultValue(true), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; } = true;
+
+        [DefaultValue(35.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double ResponseRange { get; set; } = 35.0;
+
+        [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int DockedDwellSeconds { get; set; } = 60;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(ResponseRange) || double.IsInfinity(ResponseRange) || ResponseRange < 1 || ResponseRange > 200)
+                throw new InvalidOperationException($"Autonomous threat response range for character {characterId} must be between 1 and 200.");
+
+            if (DockedDwellSeconds < 0 || DockedDwellSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous threat dwell for character {characterId} must be between 0 and 3600 seconds.");
         }
     }
 }

@@ -136,7 +136,12 @@ actor stops, replans twice, then reports a blocked route.
         "Radius": 14,
         "Throttle": 0.45,
         "DockedDwellSeconds": 15,
-        "FieldDwellSeconds": 2
+        "FieldDwellSeconds": 2,
+        "Threat": {
+          "Enabled": true,
+          "ResponseRange": 35.0,
+          "DockedDwellSeconds": 60
+        }
       }
     }
   ]
@@ -152,6 +157,21 @@ If a controlled shutdown persists an autonomous character in the field, the
 next enabled startup reloads that real character through the same player loader
 used by client zone authentication. Patrol recovery prioritizes a normal return
 to the character's current docking base before beginning another cycle.
+
+Patrol perception projects the real player's existing visible-unit set; it
+does not enumerate the zone. This is the same set that drives client unit
+enter/exit packets, so detection, stealth, gang visibility, and GM-stealth
+rules have already been applied. A unit is considered hostile using its normal
+server relationship toward the player. Hostiles beyond `ResponseRange` remain
+observable but do not trigger a response.
+
+The initial threat policy is deliberately defensive. A visible hostile inside
+the configured range causes a deploying actor to dock, or an outbound/dwelling
+actor to return along its normal route and dock. An actor already returning or
+docking continues that work instead of restarting it. After a threat-driven
+dock it waits `Threat.DockedDwellSeconds` before another patrol. The policy
+does not target, activate modules, modify combat state, or grant hidden world
+knowledge; combat behavior is a separate future slice.
 
 Stop with enough time for zone-layer persistence:
 

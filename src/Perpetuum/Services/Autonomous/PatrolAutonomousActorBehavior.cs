@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Perpetuum.ExportedTypes;
 using Perpetuum.Players;
 using Perpetuum.Services.Actions;
@@ -30,24 +31,28 @@ namespace Perpetuum.Services.Autonomous
         private readonly IUndockActionService _undockActionService;
         private readonly IDockActionService _dockActionService;
         private readonly IAutonomousNavigationService _navigation;
+        private readonly IAutonomousPerceptionService _perception;
         private readonly IAutonomousActorAudit _audit;
         private PatrolState _state;
         private TimeSpan _stateElapsed;
         private Position _origin;
         private long _dockingBaseEid;
         private bool _recoveringWorldEntry;
+        private bool _retreatingFromThreat;
 
         public PatrolAutonomousActorBehavior(
             AutonomousActorDefinition definition,
             IUndockActionService undockActionService,
             IDockActionService dockActionService,
             IAutonomousNavigationService navigation,
+            IAutonomousPerceptionService perception,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
             _undockActionService = undockActionService;
             _dockActionService = dockActionService;
             _navigation = navigation;
+            _perception = perception ?? throw new ArgumentNullException(nameof(perception));
             _audit = audit;
         }
 
@@ -63,6 +68,7 @@ namespace Perpetuum.Services.Autonomous
                 : TimeSpan.Zero;
             _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
             _recoveringWorldEntry = !context.Actor.IsDocked;
+            _retreatingFromThreat = false;
         }
 
         public void Stop(GameActionContext context)
@@ -70,6 +76,7 @@ namespace Perpetuum.Services.Autonomous
             _navigation.Reset();
             _state = PatrolState.Docked;
             _stateElapsed = TimeSpan.Zero;
+            _retreatingFromThreat = false;
         }
 
         public void Update(GameActionContext context, TimeSpan elapsed)
@@ -84,6 +91,9 @@ namespace Perpetuum.Services.Autonomous
 
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player == null)
+                return;
+
+            if (HandleVisibleThreat(context, player))
                 return;
 
             switch (_state)
@@ -140,9 +150,13 @@ namespace Perpetuum.Services.Autonomous
                 return;
             }
 
-            if (_stateElapsed < TimeSpan.FromSeconds(_definition.Patrol.DockedDwellSeconds))
+            int dwellSeconds = _retreatingFromThreat
+                ? _definition.Patrol.Threat.DockedDwellSeconds
+                : _definition.Patrol.DockedDwellSeconds;
+            if (_stateElapsed < TimeSpan.FromSeconds(dwellSeconds))
                 return;
 
+            _retreatingFromThreat = false;
             _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
             _undockActionService.Execute(context);
             SetState(PatrolState.WaitingForWorld);
@@ -170,6 +184,7 @@ namespace Perpetuum.Services.Autonomous
                     SetState(PatrolState.Outbound);
                     _audit.Write(context.Actor.Id, "patrol_outbound", AutonomousActorStatus.Active,
                         $"zone_{player.Zone.Id}");
+                    WritePerceptionAudit(context);
                     return;
                 }
             }
@@ -274,6 +289,72 @@ namespace Perpetuum.Services.Autonomous
             _dockActionService.Execute(context, new DockAction(_dockingBaseEid));
             _recoveringWorldEntry = false;
             _audit.Write(context.Actor.Id, "patrol_dock", AutonomousActorStatus.Active);
+        }
+
+        private bool HandleVisibleThreat(GameActionContext context, Player player)
+        {
+            if (!_definition.Patrol.Threat.Enabled)
+                return false;
+
+            AutonomousPerceptionSnapshot snapshot = _perception.Observe(context);
+            AutonomousThreatAssessment assessment = AutonomousThreatAssessment.From(
+                snapshot,
+                _definition.Patrol.Threat.ResponseRange);
+            if (!assessment.HasThreat)
+                return false;
+
+            if (!_retreatingFromThreat)
+            {
+                _retreatingFromThreat = true;
+                _audit.Write(context.Actor.Id, "patrol_threat_retreat", AutonomousActorStatus.Active,
+                    $"eid_{assessment.Nearest.Eid}_distance_{Math.Ceiling(assessment.Nearest.Distance)}");
+            }
+
+            AutonomousThreatDirective directive = AutonomousThreatResponsePolicy.Select(
+                assessment,
+                GetFieldActivity());
+            if (directive == AutonomousThreatDirective.Dock)
+            {
+                _origin = player.CurrentPosition;
+                _navigation.Stop(context);
+                SetState(PatrolState.WaitingToDock);
+                return true;
+            }
+
+            if (directive == AutonomousThreatDirective.Return)
+            {
+                BeginReturn(context, player);
+                return true;
+            }
+
+            return false;
+        }
+
+        private AutonomousFieldActivity GetFieldActivity()
+        {
+            switch (_state)
+            {
+                case PatrolState.WaitingForWorld:
+                    return AutonomousFieldActivity.Deploying;
+                case PatrolState.Outbound:
+                    return AutonomousFieldActivity.TravellingOutbound;
+                case PatrolState.FieldDwell:
+                    return AutonomousFieldActivity.Dwelling;
+                case PatrolState.Returning:
+                    return AutonomousFieldActivity.Returning;
+                case PatrolState.WaitingToDock:
+                    return AutonomousFieldActivity.Docking;
+                default:
+                    return AutonomousFieldActivity.Other;
+            }
+        }
+
+        private void WritePerceptionAudit(GameActionContext context)
+        {
+            AutonomousPerceptionSnapshot snapshot = _perception.Observe(context);
+            int hostileCount = snapshot.VisibleUnits.Count(unit => unit.Hostile);
+            _audit.Write(context.Actor.Id, "patrol_perception", AutonomousActorStatus.Active,
+                $"visible_{snapshot.VisibleUnits.Count}_hostile_{hostileCount}");
         }
 
         private void SetState(PatrolState state)
