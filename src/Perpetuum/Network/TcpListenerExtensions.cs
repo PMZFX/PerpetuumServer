@@ -23,12 +23,22 @@ namespace Perpetuum.Network
                 var helper = (ListenerHelper) ar.AsyncState;
                 var socket = helper.listener.EndAcceptSocket(ar);
                 helper.listener.BeginAcceptSocket(AcceptSocketCallback, helper);
-                Console.Beep(200, 200);
+                if (OperatingSystem.IsWindows())
+                {
+                    Console.Beep(200, 200);
+                }
                 helper.onConnectionAccepted(socket);
             }
             catch (ObjectDisposedException)
             {
 
+            }
+            catch (SocketException ex) when (
+                ex.SocketErrorCode == SocketError.OperationAborted ||
+                ex.SocketErrorCode == SocketError.Interrupted)
+            {
+                // TcpListener.Stop cancels an outstanding accept. That is the
+                // expected listener shutdown path, not a server error.
             }
             catch (Exception ex)
             {

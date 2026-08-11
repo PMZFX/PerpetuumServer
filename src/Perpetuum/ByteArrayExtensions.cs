@@ -1,7 +1,5 @@
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Perpetuum
 {
@@ -46,22 +44,6 @@ namespace Perpetuum
             finally
             {
                 Marshal.FreeHGlobal(ptr);
-            }
-        }
-
-        /// <summary>
-        /// Converts a byte array to an object
-        /// </summary>
-        public static T Deserialize<T>(this byte[] data)
-        {
-            if (data == null)
-            {
-                return default(T);
-            }
-
-            using (var ms = new MemoryStream(data))
-            {
-                return (T)(new BinaryFormatter().Deserialize(ms));
             }
         }
     }

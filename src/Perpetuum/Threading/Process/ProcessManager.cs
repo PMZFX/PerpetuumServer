@@ -13,7 +13,7 @@ namespace Perpetuum.Threading.Process
         private readonly TimeSpan _updateInterval;
         private readonly Thread _thread;
         private ImmutableList<IProcess> _processes = ImmutableList<IProcess>.Empty;
-        private bool _isRunning;
+        private volatile bool _isRunning;
 
         public ProcessManager(TimeSpan updateInterval)
         {
@@ -57,14 +57,7 @@ namespace Perpetuum.Threading.Process
             {
                 if (!_thread.Join(TimeSpan.FromSeconds(5)))
                 {
-                    try
-                    {
-                        _thread.Abort();
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Exception(ex);
-                    }
+                    Logger.Error("MainLoop did not stop within 5 seconds.");
                 }
             }
 
@@ -103,12 +96,6 @@ namespace Perpetuum.Threading.Process
                     {
                         process.Update(elapsed);
                     }
-                }
-                catch (ThreadAbortException)
-                {
-                    _isRunning = false;
-                    Thread.ResetAbort();
-                    return;
                 }
                 catch (Exception ex)
                 {

@@ -638,6 +638,11 @@ namespace Perpetuum.Services.MissionEngine.MissionTargets
             _lockedNpcEids = lockedEidList;
         }
 
+        protected override void OnCloned()
+        {
+            _lockedNpcEids = _lockedNpcEids == null ? null : (long[]) _lockedNpcEids.Clone();
+        }
+
         public override Dictionary<string, object> ToDictionary()
         {
             var info = base.ToDictionary();

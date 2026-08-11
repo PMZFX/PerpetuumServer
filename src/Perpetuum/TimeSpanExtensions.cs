@@ -26,9 +26,9 @@ namespace Perpetuum
             return TimeSpan.FromTicks(span.Ticks * multiplier);
         }
 
-        public static TimeSpan Divide(this TimeSpan left, TimeSpan right)
+        public static long WholeIntervals(this TimeSpan left, TimeSpan interval)
         {
-            return TimeSpan.FromTicks(left.Ticks/right.Ticks);
+            return left.Ticks / interval.Ticks;
         }
 
         public static TimeSpan Divide(this TimeSpan left, int divider)

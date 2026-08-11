@@ -1,8 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
-using System.Runtime.Serialization.Formatters.Binary;
 
 namespace Perpetuum
 {
@@ -46,24 +44,6 @@ namespace Perpetuum
             finally
             {
                 Marshal.FreeHGlobal(ptr);
-            }
-        }
-        
-        public static T Clone<T>(this T source)
-        {
-            if (Equals(source, default(T)))
-            {
-                return default(T);
-            }
-
-            Debug.Assert(typeof(T).IsSerializable, "EZ NEM SERIALIZALHATO: " + typeof(T));
-
-            using (var ms = new MemoryStream())
-            {
-                var bf = new BinaryFormatter();
-                bf.Serialize(ms, source);
-                ms.Seek(0, SeekOrigin.Begin);
-                return (T)(bf.Deserialize(ms));
             }
         }
     }
