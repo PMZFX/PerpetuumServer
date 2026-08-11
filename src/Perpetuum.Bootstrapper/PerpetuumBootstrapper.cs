@@ -1626,6 +1626,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousNavigationService>();
             _ = _builder.RegisterType<AutonomousPerceptionService>()
                 .As<IAutonomousPerceptionService>();
+            _ = _builder.RegisterType<AutonomousDamageMonitor>()
+                .As<IAutonomousDamageMonitor>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>

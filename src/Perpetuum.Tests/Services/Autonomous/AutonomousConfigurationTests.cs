@@ -76,6 +76,45 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
 
+        [Fact]
+        public void DefensiveCombatIsOptIn()
+        {
+            var options = new AutonomousDefenseOptions();
+
+            options.Validate(9);
+
+            Assert.False(options.Enabled);
+            Assert.Equal(60.0, options.ResponseRange);
+            Assert.Equal(8, options.LockTimeoutSeconds);
+            Assert.Equal(20, options.MaxEngagementSeconds);
+        }
+
+        [Fact]
+        public void EngagementLimitMustExceedLockTimeout()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors =
+                {
+                    new AutonomousActorDefinition
+                    {
+                        CharacterId = 9,
+                        Behavior = "patrol",
+                        Patrol = new AutonomousPatrolOptions
+                        {
+                            Defense = new AutonomousDefenseOptions
+                            {
+                                LockTimeoutSeconds = 10,
+                                MaxEngagementSeconds = 10
+                            }
+                        }
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
         [Theory]
         [InlineData(99)]
         [InlineData(60001)]
