@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using Perpetuum.Services.Autonomous;
 using System.ComponentModel;
 
 namespace Perpetuum
@@ -26,6 +27,8 @@ namespace Perpetuum
         public CorporationConfiguration Corporation { get; set; }
 
         public bool StartServerInAdminOnlyMode { get; set; }
+
+        public AutonomousConfiguration Autonomous { get; set; } = new AutonomousConfiguration();
 
         // Default NIC value for new player.
         [DefaultValue(500000), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]

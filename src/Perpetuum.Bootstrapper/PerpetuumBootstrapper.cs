@@ -64,6 +64,7 @@ using Perpetuum.RequestHandlers.Zone.StatsMapDrawing;
 using Perpetuum.Robots;
 using Perpetuum.Services;
 using Perpetuum.Services.Actions;
+using Perpetuum.Services.Autonomous;
 using Perpetuum.Services.Channels;
 using Perpetuum.Services.Channels.ChatCommands;
 using Perpetuum.Services.Daytime;
@@ -1609,6 +1610,35 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<MarketCreateSellOrderActionService>().As<IMarketCreateSellOrderActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
             _ = _builder.RegisterType<MovementInputService>().As<IMovementInputService>().SingleInstance();
+
+            _ = _builder.Register(c =>
+            {
+                GlobalConfiguration configuration = c.Resolve<GlobalConfiguration>();
+                return configuration.Autonomous ?? new AutonomousConfiguration();
+            }).SingleInstance();
+            _ = _builder.RegisterType<AutonomousActorAudit>().As<IAutonomousActorAudit>().SingleInstance();
+            _ = _builder.RegisterType<AutonomousActorRegistry>().As<IAutonomousActorRegistry>().SingleInstance();
+            _ = _builder.RegisterType<IdleAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("idle");
+            _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
+            {
+                IComponentContext context = c.Resolve<IComponentContext>();
+                return name =>
+                {
+                    string behaviorName = string.IsNullOrWhiteSpace(name) ? "idle" : name;
+                    if (!context.IsRegisteredWithKey<IAutonomousActorBehavior>(behaviorName))
+                        throw new InvalidOperationException($"Unknown autonomous behavior '{behaviorName}'.");
+
+                    return context.ResolveKeyed<IAutonomousActorBehavior>(behaviorName);
+                };
+            }).SingleInstance();
+            _ = _builder.RegisterType<AutonomousActor>().As<IAutonomousActor>();
+            _ = _builder.RegisterType<AutonomousActorHost>().SingleInstance().AutoActivate().OnActivated(e =>
+            {
+                AutonomousConfiguration configuration = e.Context.Resolve<AutonomousConfiguration>();
+                e.Context.Resolve<IProcessManager>().AddProcess(
+                    e.Instance.AsTimed(TimeSpan.FromMilliseconds(configuration.TickIntervalMilliseconds)));
+            });
 
             _ = _builder.RegisterType<MarketHelper>().SingleInstance();
             _ = _builder.RegisterType<MarketHandler>().SingleInstance();

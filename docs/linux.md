@@ -91,6 +91,30 @@ runs consistency checks, and reports:
 >>>> Perpetuum Server State : [Online]
 ```
 
+Autonomous character hosting is opt-in. Existing configuration files remain
+disabled by default. The initial idle lifecycle can be configured with normal
+character IDs:
+
+```json
+"Autonomous": {
+  "Enabled": false,
+  "TickIntervalMilliseconds": 500,
+  "MaxConsecutiveFailures": 3,
+  "Actors": [
+    {
+      "CharacterId": 123,
+      "Enabled": true,
+      "Behavior": "idle"
+    }
+  ]
+}
+```
+
+Only dedicated characters should be enabled. A human relay session selecting a
+configured character suspends its autonomous controller; it resumes only after
+the human relay and zone sessions release that character. The idle behavior
+performs no actions and is intended to validate lifecycle and configuration.
+
 Stop with enough time for zone-layer persistence:
 
 ```bash
