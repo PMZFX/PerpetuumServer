@@ -34,6 +34,26 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
 
+        [Fact]
+        public void InvalidPatrolOptionsAreRejected()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Enabled = true,
+                Actors =
+                {
+                    new AutonomousActorDefinition
+                    {
+                        CharacterId = 7,
+                        Behavior = "patrol",
+                        Patrol = new AutonomousPatrolOptions { Radius = 2 }
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
         [Theory]
         [InlineData(99)]
         [InlineData(60001)]
