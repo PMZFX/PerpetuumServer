@@ -63,6 +63,7 @@ using Perpetuum.RequestHandlers.Zone.PBS;
 using Perpetuum.RequestHandlers.Zone.StatsMapDrawing;
 using Perpetuum.Robots;
 using Perpetuum.Services;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.Channels;
 using Perpetuum.Services.Channels.ChatCommands;
 using Perpetuum.Services.Daytime;
@@ -1601,6 +1602,10 @@ namespace Perpetuum.Bootstrapper
 
         private void InitRelayManager()
         {
+            _ = _builder.RegisterType<GameActionAudit>().As<IGameActionAudit>().SingleInstance();
+            _ = _builder.RegisterType<UndockActionService>().As<IUndockActionService>();
+            _ = _builder.RegisterType<RelocateItemsActionService>().As<IRelocateItemsActionService>();
+
             _ = _builder.RegisterType<MarketHelper>().SingleInstance();
             _ = _builder.RegisterType<MarketHandler>().SingleInstance();
 

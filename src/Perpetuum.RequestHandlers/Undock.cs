@@ -1,37 +1,21 @@
-using Perpetuum.Accounting.Characters;
 using Perpetuum.Host.Requests;
-using Perpetuum.Items;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers
 {
     public class Undock : IRequestHandler
     {
-        public void HandleRequest(IRequest request)
+        private readonly IUndockActionService _undockActionService;
+
+        public Undock(IUndockActionService undockActionService)
         {
-            var character = request.Session.Character;
-
-            if (!request.Session.AccessLevel.IsAdminOrGm())
-                CheckUndockConditionsAndThrowIfFailed(character);
-
-            var dockingBase = character.GetCurrentDockingBase();
-            if (dockingBase == null)
-                throw new PerpetuumException(ErrorCodes.DockingBaseNotFound);
-
-            if (dockingBase.Zone == null)
-                throw new PerpetuumException(ErrorCodes.ItemNotFound);
-
-            dockingBase.Zone.Enter(character,Commands.Undock);
+            _undockActionService = undockActionService;
         }
 
-        private static void CheckUndockConditionsAndThrowIfFailed(Character character)
+        public void HandleRequest(IRequest request)
         {
-            character.CheckNextAvailableUndockTimeAndThrowIfFailed();
-
-            var activeRobot = character.GetActiveRobot().ThrowIfNull(ErrorCodes.ARobotMustBeSelected);
-            activeRobot.CheckEnablerExtensionsAndThrowIfFailed(character);
-            activeRobot.CheckEnergySystemAndThrowIfFailed();
-            var container = activeRobot.GetContainer().ThrowIfNull(ErrorCodes.WTFErrorMedicalAttentionSuggested);
-            container.CheckCapacityAndThrowIfFailed();
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            _undockActionService.Execute(context);
         }
     }
 }
