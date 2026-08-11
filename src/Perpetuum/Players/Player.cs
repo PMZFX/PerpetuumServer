@@ -296,7 +296,7 @@ namespace Perpetuum.Players
 
         public void CheckDockingConditionsAndThrow(long baseEid, bool checkRange = true)
         {
-            if (!Session.AccessLevel.IsAdminOrGm())
+            if (!Character.AccessLevel.IsAdminOrGm())
             {
                 HasAggressorEffect.ThrowIfTrue(ErrorCodes.NotAllowedForAggressors);
                 HasPvpEffect.ThrowIfTrue(ErrorCodes.CantDockThisState);
@@ -322,7 +322,7 @@ namespace Perpetuum.Players
                 dockingBase.IsInDockingRange(this).ThrowIfFalse(ErrorCodes.DockingOutOfRange);
             }
 
-            AccessLevel currentAccess = Session.AccessLevel;
+            AccessLevel currentAccess = Character.AccessLevel;
 
             if (!currentAccess.IsAdminOrGm())
             {
