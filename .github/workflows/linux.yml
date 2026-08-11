@@ -1,0 +1,27 @@
+name: Linux server container
+
+on:
+  push:
+    branches:
+      - linux-p31
+      - perpetuum-ai/net10-port
+  pull_request:
+    branches:
+      - perpetuum-ai/p31-base
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build native server image
+        run: docker build --tag perpetuum-server:linux-ci .
+
+      - name: Probe console entry point
+        run: docker run --rm perpetuum-server:linux-ci --help

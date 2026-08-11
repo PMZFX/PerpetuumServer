@@ -4,6 +4,17 @@
 This is a fork of the Official Perpetuum Server as released by Avatar Creations [here](https://github.com/PerpetuumOnline/PerpetuumServer).  
 This server is developed under the direction of the [Open Perpetuum Project](https://openperpetuum.com) game design and development team; a 100% volunteer opensource player development and persistent Perpetuum Server hosting project.
 
+## Native Linux server
+
+The `linux-p31` release line runs the P31 headless server natively on .NET 10
+and Linux. It includes a digest-pinned container build and has been validated
+with the stock Steam client, all 59 P31 zones, normal account creation, and
+state persistence across a clean restart.
+
+See [the Linux build and operations guide](docs/linux.md). The Windows WPF
+AdminTool and Windows Service host are intentionally outside the native Linux
+build; the console server is the supported Linux entry point.
+
 To join the Team, find our call for volunteers on our website [here!](https://openperpetuum.com/volunteer-tech) where you will also find our [Volunteer Survey](https://forms.gle/V7B5zNAFCFmSLLxt6).
 
 If you have any questions about joining the team hit us up on [discord](https://discord.gg/e4gH9Ff)!
