@@ -1,97 +1,131 @@
-﻿using System;
+using System;
 using System.IO;
-using Microsoft.Extensions.CommandLineUtils;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
 using Perpetuum.Bootstrapper;
 
 namespace Perpetuum.Server
 {
     public static class Program
     {
-
         static int Main(string[] args)
         {
-            var app = new CommandLineApplication();
-            app.HelpOption("-h|--help");
-            var gameRoot = app.Argument("<GAMEROOT>","d:\\server\\genxy");
-            var dumpCommands = app.Option("-dc|--dump-commands", "dump commands", CommandOptionType.NoValue);
+            if (args.Any(arg => arg == "-h" || arg == "--help"))
+            {
+                ShowHelp();
+                return 0;
+            }
+
+            if (!TryParseArguments(args, out string gameRoot, out bool dumpCommands))
+            {
+                ShowHelp();
+                return 2;
+            }
 
             var bootstrapper = new PerpetuumBootstrapper();
-
-            app.OnExecute(() =>
+            try
             {
-                if (dumpCommands.HasValue())
+                if (dumpCommands)
                 {
                     Console.WriteLine("dumping commands to commands.txt");
                     bootstrapper.WriteCommandsToFile("commands.txt");
                     return 0;
                 }
 
-                if (gameRoot.Value == null)
+                if (!Directory.Exists(gameRoot))
                 {
-                    return 2;
-                }
-
-                if (!Directory.Exists(gameRoot.Value))
-                {
-                    Console.WriteLine($"GameRoot folder was not found: {gameRoot.Value}");
+                    Console.WriteLine($"GameRoot folder was not found: {gameRoot}");
                     return 3;
                 }
 
-                bootstrapper.Init(gameRoot.Value);
+                bootstrapper.Init(gameRoot);
 
-                if (bootstrapper.TryInitUpnp(out bool upnpSuccess))
+                if (bootstrapper.TryInitUpnp(out bool upnpSuccess) && !upnpSuccess)
                 {
-                    if (!upnpSuccess)
-                    {
-                        //System Error Codes (500-999)
-                        // signal upnp attempt error with custom errorcode
-                        return 2000;
-                    }
+                    return 2000;
                 }
 
+                int stopRequested = 0;
+                void RequestStop()
+                {
+                    if (Interlocked.Exchange(ref stopRequested, 1) != 0)
+                        return;
+
+                    Console.WriteLine();
+                    Console.WriteLine("STOPPING HOST IN 4 SECONDS");
+                    Console.WriteLine();
+
+                    bootstrapper.Stop(TimeSpan.FromSeconds(4));
+                }
+
+                Console.CancelKeyPress += (sender, eventArgs) =>
+                {
+                    eventArgs.Cancel = true;
+                    RequestStop();
+                };
+
+                using PosixSignalRegistration terminateRegistration = OperatingSystem.IsWindows()
+                    ? null
+                    : PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
+                    {
+                        context.Cancel = true;
+                        RequestStop();
+                    });
+
+                bootstrapper.Start();
+                bootstrapper.WaitForStop();
                 return 0;
-            });
-
-            var err = 0;
-            try
-            {
-                err = app.Execute(args);
-                if (err == 0)
-                {
-                    Console.CancelKeyPress += (sender,eventArgs) =>
-                    {
-                        Console.WriteLine("");
-                        Console.WriteLine("STOPPING HOST IN 4 SECONDS");
-                        Console.WriteLine("");
-
-                        eventArgs.Cancel = true;
-                        bootstrapper.Stop(TimeSpan.FromSeconds(4));
-                    };
-
-                    bootstrapper.Start();
-                    bootstrapper.WaitForStop();
-                }
-                else
-                {
-                    app.ShowHelp();
-                }
             }
             catch (Exception ex)
             {
                 DisplayException(ex);
-                err = 1; // generic error
+                return 1;
+            }
+        }
+
+        private static bool TryParseArguments(string[] args, out string gameRoot, out bool dumpCommands)
+        {
+            gameRoot = null;
+            dumpCommands = false;
+
+            foreach (string arg in args)
+            {
+                switch (arg)
+                {
+                    case "-dc":
+                    case "--dump-commands":
+                        dumpCommands = true;
+                        break;
+                    default:
+                        if (arg.StartsWith("-", StringComparison.Ordinal) || gameRoot != null)
+                        {
+                            Console.WriteLine($"Unknown or duplicate argument: {arg}");
+                            return false;
+                        }
+
+                        gameRoot = arg;
+                        break;
+                }
             }
 
-            return err;
+            return dumpCommands || gameRoot != null;
+        }
+
+        private static void ShowHelp()
+        {
+            Console.WriteLine("Usage: Perpetuum.Server [options] <GAMEROOT>");
+            Console.WriteLine("  -h,  --help           Show help");
+            Console.WriteLine("  -dc, --dump-commands  Write commands.txt and exit");
         }
 
         private static void DisplayException(Exception ex)
         {
-            if (ex is AggregateException aex)
+            if (ex is AggregateException aggregateException)
             {
-                foreach (var innerException in aex.InnerExceptions)
+                foreach (var innerException in aggregateException.InnerExceptions)
                 {
-                    DisplayException(innerException);    
+                    DisplayException(innerException);
                 }
                 return;
             }
@@ -103,6 +137,5 @@ namespace Perpetuum.Server
 
             Console.WriteLine(ex.Message);
         }
-
     }
 }

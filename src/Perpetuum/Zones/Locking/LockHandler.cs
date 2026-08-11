@@ -11,6 +11,7 @@ using Perpetuum.Units;
 using Perpetuum.Zones.Blobs;
 using Perpetuum.Zones.Locking.Locks;
 using Perpetuum.Zones.Locking.UnitProperties;
+using Lock = Perpetuum.Zones.Locking.Locks.Lock;
 
 namespace Perpetuum.Zones.Locking
 {

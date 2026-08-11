@@ -410,8 +410,13 @@ namespace Perpetuum.Services.MissionEngine.MissionTargets
 
         public MissionTarget GetClone()
         {
-            return this.Clone();
+            var clone = (MissionTarget) MemberwiseClone();
+            clone.ResetMyDictionary();
+            clone.OnCloned();
+            return clone;
         }
+
+        protected virtual void OnCloned() { }
 
         private Dictionary<string, object> GenerateMyDictionary()
         {

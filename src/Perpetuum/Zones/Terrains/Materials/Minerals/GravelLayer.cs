@@ -51,19 +51,17 @@ namespace Perpetuum.Zones.Terrains.Materials.Minerals
 
         public List<MineralNode> GetAll()
         {
-            var bmp = (Bitmap)Image.FromFile(_fileSystem.CreatePath( Path.Combine("layers",  "mineral_gravel.0045.png")));
+            var image = PngRgb24Reader.Load(_fileSystem.CreatePath(Path.Combine("layers", "mineral_gravel.0045.png")));
 
             var minerals = new Dictionary<Point, uint>();
 
             int minx = int.MaxValue, miny = int.MaxValue, maxx = 0, maxy = 0;
 
-            for (int y = 0; y < bmp.Height; y++)
+            for (int y = 0; y < image.Height; y++)
             {
-                for (int x = 0; x < bmp.Width; x++)
+                for (int x = 0; x < image.Width; x++)
                 {
-                    var c = bmp.GetPixel(x, y);
-
-                    var b = c.GetBrightness() * 350000;
+                    var b = image.GetBrightness(x, y) * 350000;
 
                     if (b > 0)
                     {

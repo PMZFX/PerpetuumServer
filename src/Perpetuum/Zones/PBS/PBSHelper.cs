@@ -1259,12 +1259,12 @@ namespace Perpetuum.Zones.PBS
                 Dictionary<string, object> characterDict;
                 if (wasOnZone)
                 {
-                    characterDict = infoBaseDeadWhileOnZone.Clone();
+                    characterDict = new Dictionary<string, object>(infoBaseDeadWhileOnZone);
                     characterDict.Add(k.baseEID, dockingBaseEid);
                 }
                 else
                 {
-                    characterDict = infoBaseDeadWhileDocked.Clone();
+                    characterDict = new Dictionary<string, object>(infoBaseDeadWhileDocked);
                     characterDict.Add(k.baseEID, dockingBaseEid);
                 }
 

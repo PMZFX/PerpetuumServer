@@ -1,0 +1,130 @@
+# Native Linux P31 server
+
+## Scope
+
+This release line ports the five headless P31 projects to SDK-style .NET 10:
+
+1. `Perpetuum.ExportedTypes`
+2. `Perpetuum`
+3. `Perpetuum.RequestHandlers`
+4. `Perpetuum.Bootstrapper`
+5. `Perpetuum.Server`
+
+It preserves the P31 client protocol and gameplay behavior. The WPF AdminTool
+and Windows Service host remain Windows-only and are not part of the Linux
+dependency graph.
+
+## External prerequisites
+
+The repository does not redistribute Perpetuum's client or dedicated-server
+runtime assets. A working deployment needs:
+
+- a matching P31 `perpetuumsa` SQL Server database initialized from OPDB;
+- the legitimately acquired dedicated-server runtime data, including
+  `layers`, `customDictionary`, and `plantrules`; and
+- a local `perpetuum.ini` containing the listener and database settings.
+
+The game server writes persistent terrain layers during operation and clean
+shutdown, so its runtime-data mount must be writable by the container user.
+Keep credentials in a local ignored file or secret store; never commit
+`perpetuum.ini` with a live password.
+
+## Build
+
+From the repository root:
+
+```bash
+docker build --tag perpetuum-server:linux-p31 .
+docker run --rm perpetuum-server:linux-p31 --help
+```
+
+The build uses the SDK and runtime image digests recorded in `Dockerfile` and
+does not require the external game data.
+
+## Configuration
+
+The console host reads `/game/perpetuum.ini` by default. A minimal shape is:
+
+```json
+{
+  "ListenerPort": 17700,
+  "EnableUpnp": false,
+  "ConnectionString": "Server=database,1433;Database=perpetuumsa;User ID=sa;Password=CHANGE_ME;Encrypt=True;TrustServerCertificate=True",
+  "PersonalConfig": "startup_standalone"
+}
+```
+
+Automatic UPnP is deliberately unavailable. Configure explicit firewall and
+port-forwarding rules instead. Do not publish SQL Server's port to an
+untrusted network.
+
+## Run
+
+On a user-defined Docker network containing a SQL Server service named
+`database`:
+
+```bash
+docker run --detach \
+  --name perpetuum-server \
+  --network perpetuum \
+  --user "$(id -u):$(id -g)" \
+  --publish 17700-17759:17700-17759 \
+  --volume /absolute/path/to/p31-runtime:/game:Z \
+  perpetuum-server:linux-p31
+```
+
+P31 assigns the relay to `17700` and one sequential listener to each of its 59
+enabled zones. A database with a different enabled-zone count may require a
+different upper port bound. Linux host networking is also suitable when SQL
+Server and the game host are intentionally managed on the same machine.
+
+Follow startup and verify the terminal state:
+
+```bash
+docker logs --follow perpetuum-server
+```
+
+A successful P31 boot initializes the database connection, loads zone 140,
+runs consistency checks, and reports:
+
+```text
+>>>> Perpetuum Server State : [Online]
+```
+
+Stop with enough time for zone-layer persistence:
+
+```bash
+docker stop --timeout 20 perpetuum-server
+```
+
+The process should report `Stopping`, then `Off`, and exit with status 0.
+
+## Stock client
+
+In the stock Steam client, add the Linux host's reachable address as a private
+server. The private-server flow uses normal username/password authentication;
+Steam supplies and launches the client but is not the private-server login
+mechanism.
+
+Normal registration is controlled by `dbo.serverinfo.isopen`. Keep
+`isbroadcast` disabled for a private development instance. The P31
+`accountOpenCreate` handler creates normal accounts and enforces one creation
+per relay session.
+
+## Validated baseline
+
+The `linux-p31` baseline has been exercised against an isolated exact-P31
+database and runtime:
+
+- all 40 P31 database patch calls applied;
+- 291 tables and 6,232 entity defaults passed the recorded invariants;
+- all 59 enabled zones loaded and reached `Online`;
+- relay and zone listeners accepted stock-client connections;
+- login, character creation, market purchase, undock, movement, dock, and
+  clean disconnect succeeded; and
+- accounts and characters persisted across a controlled server restart.
+
+Remaining `System.Drawing.Common` analyzer warnings belong to optional
+debug/admin bitmap handlers, not normal server startup. The legacy Rijndael
+zone-ticket implementation remains in place to preserve client wire
+compatibility until a dedicated protocol test covers its replacement.

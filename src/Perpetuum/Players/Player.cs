@@ -47,6 +47,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Transactions;
+using Lock = Perpetuum.Zones.Locking.Locks.Lock;
 
 namespace Perpetuum.Players
 {

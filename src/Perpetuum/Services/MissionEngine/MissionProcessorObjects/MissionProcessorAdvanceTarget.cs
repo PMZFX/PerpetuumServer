@@ -89,7 +89,7 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
                 if (!collector.GetMissionsInProgress().SelectMany(m => m.CollectIncompleteTargetsByType(targetType)).Any(t => t.IsMyTurn))
                     continue;
 
-                var info = originalData.Clone();
+                var info = new Dictionary<string, object>(originalData);
 
                 //fake the source character
                 info[k.characterID] = other.Id;

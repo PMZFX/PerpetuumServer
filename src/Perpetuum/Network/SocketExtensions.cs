@@ -16,19 +16,26 @@ namespace Perpetuum.Network
         {
             try
             {
-                var data = new byte[12];
-
-                unsafe
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, state);
+                if (state)
                 {
-                    fixed (byte* p = data)
-                    {
-                        *(uint*)p = (uint)(state ? 1 : 0);
-                        *(uint*)(p + 4) = time;
-                        *(uint*)(p + 8) = interval;
-                    }
-                }
+                    int keepAliveTimeSeconds = checked((int) Math.Max(1, (time + 999L) / 1000L));
+                    int keepAliveIntervalSeconds = checked((int) Math.Max(1, (interval + 999L) / 1000L));
 
-                socket.IOControl(IOControlCode.KeepAliveValues, data, null);
+                    // Linux exposes these options as signed 16-bit values and
+                    // rejects larger values with EINVAL. The server's historical
+                    // one-day idle timeout exceeds that limit, so use the closest
+                    // value Linux accepts while preserving the requested value on
+                    // platforms that support it.
+                    if (OperatingSystem.IsLinux())
+                    {
+                        keepAliveTimeSeconds = Math.Min(keepAliveTimeSeconds, short.MaxValue);
+                        keepAliveIntervalSeconds = Math.Min(keepAliveIntervalSeconds, short.MaxValue);
+                    }
+
+                    socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, keepAliveTimeSeconds);
+                    socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, keepAliveIntervalSeconds);
+                }
             }
             catch (Exception ex)
             {
