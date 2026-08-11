@@ -173,6 +173,23 @@ dock it waits `Threat.DockedDwellSeconds` before another patrol. The policy
 does not target, activate modules, modify combat state, or grant hidden world
 knowledge; combat behavior is a separate future slice.
 
+Targeting and module operations are nevertheless exposed as shared,
+authenticated game actions for later behaviors. A unit can be submitted for
+locking only when it is in the real player's maintained visible set. The normal
+asynchronous lock handler still decides lock slots, range, lockability, target
+state, and completion time; terrain-lock height is read from server terrain.
+Module activation and ammunition operations continue through the existing
+module state machine and inventory transactions, preserving lock, range, line
+of sight, core, ammunition, aggression, PvP, cycle, and damage rules.
+
+The patrol remembers the robot it started with. If that robot is destroyed,
+removed, or replaced while the behavior is running, navigation stops and a
+recovery audit event is emitted. It does not automatically accept a starter or
+replacement robot. Normal player-death processing remains responsible for
+docking, loot, insurance, robot disposal, and replacement selection. Defensive
+combat is intentionally deferred until it can react to an actual damage source
+rather than attacking every visible hostile NPC.
+
 Stop with enough time for zone-layer persistence:
 
 ```bash

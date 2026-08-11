@@ -37,8 +37,10 @@ namespace Perpetuum.Services.Autonomous
         private TimeSpan _stateElapsed;
         private Position _origin;
         private long _dockingBaseEid;
+        private long _expectedRobotEid;
         private bool _recoveringWorldEntry;
         private bool _retreatingFromThreat;
+        private bool _robotRecoveryRequired;
 
         public PatrolAutonomousActorBehavior(
             AutonomousActorDefinition definition,
@@ -67,8 +69,10 @@ namespace Perpetuum.Services.Autonomous
                 ? TimeSpan.FromSeconds(_definition.Patrol.DockedDwellSeconds)
                 : TimeSpan.Zero;
             _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
+            _expectedRobotEid = context.Actor.ActiveRobotEid;
             _recoveringWorldEntry = !context.Actor.IsDocked;
             _retreatingFromThreat = false;
+            _robotRecoveryRequired = false;
         }
 
         public void Stop(GameActionContext context)
@@ -77,11 +81,15 @@ namespace Perpetuum.Services.Autonomous
             _state = PatrolState.Docked;
             _stateElapsed = TimeSpan.Zero;
             _retreatingFromThreat = false;
+            _robotRecoveryRequired = false;
         }
 
         public void Update(GameActionContext context, TimeSpan elapsed)
         {
             _stateElapsed += elapsed;
+
+            if (HandleRobotRecovery(context, false))
+                return;
 
             if (context.Actor.IsDocked)
             {
@@ -91,6 +99,9 @@ namespace Perpetuum.Services.Autonomous
 
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player == null)
+                return;
+
+            if (HandleRobotRecovery(context, player.States.Dead))
                 return;
 
             if (HandleVisibleThreat(context, player))
@@ -140,6 +151,9 @@ namespace Perpetuum.Services.Autonomous
 
         private void UpdateDocked(GameActionContext context)
         {
+            if (_robotRecoveryRequired)
+                return;
+
             if (_state == PatrolState.WaitingForWorld && _stateElapsed < WorldLoadTimeout)
                 return;
 
@@ -328,6 +342,25 @@ namespace Perpetuum.Services.Autonomous
             }
 
             return false;
+        }
+
+        private bool HandleRobotRecovery(GameActionContext context, bool liveRobotDead)
+        {
+            AutonomousRobotRecoveryReason reason = AutonomousRobotRecoveryPolicy.Assess(
+                _expectedRobotEid,
+                context.Actor.ActiveRobotEid,
+                liveRobotDead);
+            if (reason == AutonomousRobotRecoveryReason.None)
+                return false;
+
+            _navigation.Stop(context);
+            if (!_robotRecoveryRequired)
+            {
+                _robotRecoveryRequired = true;
+                _audit.Write(context.Actor.Id, "patrol_recovery_required", AutonomousActorStatus.Active,
+                    reason.ToString());
+            }
+            return true;
         }
 
         private AutonomousFieldActivity GetFieldActivity()

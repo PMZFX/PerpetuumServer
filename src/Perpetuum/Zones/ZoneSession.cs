@@ -15,7 +15,6 @@ using Perpetuum.EntityFramework;
 using Perpetuum.ExportedTypes;
 using Perpetuum.IDGenerators;
 using Perpetuum.Items;
-using Perpetuum.Items.Ammos;
 using Perpetuum.Log;
 using Perpetuum.Modules;
 using Perpetuum.Network;
@@ -44,6 +43,8 @@ namespace Perpetuum.Zones
         private readonly IZone _zone;
         private readonly ISessionManager _sessionManager;
         private readonly IMovementInputService _movementInputService;
+        private readonly ITargetLockActionService _targetLockActionService;
+        private readonly IModuleActionService _moduleActionService;
         private readonly EncryptedTcpConnection _connection;
         private GameActionContext _actionContext;
 
@@ -62,7 +63,9 @@ namespace Perpetuum.Zones
             IZone zone,
             Socket socket,
             ISessionManager sessionManager,
-            IMovementInputService movementInputService)
+            IMovementInputService movementInputService,
+            ITargetLockActionService targetLockActionService,
+            IModuleActionService moduleActionService)
         {
             Id = _idGenerator.GetNextID();
             _zone = zone;
@@ -71,6 +74,8 @@ namespace Perpetuum.Zones
             _connection.Disconnected += OnDisconnected;
             _sessionManager = sessionManager;
             _movementInputService = movementInputService;
+            _targetLockActionService = targetLockActionService;
+            _moduleActionService = moduleActionService;
         }
 
         public void Start()
@@ -363,23 +368,19 @@ namespace Perpetuum.Zones
             var isPrimary = packet.ReadByte() != 0;
 
             WritePacketLog(packet, $"target = {targetEid} primary = {isPrimary}");
-            _player.AddLock(targetEid, isPrimary);
+            _targetLockActionService.LockUnit(_actionContext, new UnitTargetLockAction(targetEid, isPrimary));
         }
 
         private void HandleLockTerrain(Packet packet)
         {
             var x = packet.ReadInt();
             var y = packet.ReadInt();
-            packet.ReadInt(); // z
-            var z = _zone.GetZ(x, y);
-            var location = new Position(x + 0.5, y + 0.5, z);
+            packet.ReadInt(); // client z is not authoritative
 
             var isPrimary = packet.ReadByte() != 0;
 
-            WritePacketLog(packet, $"target = {location} primary = {isPrimary}");
-            var terrainLock = new TerrainLock(_player, location) { Primary = isPrimary };
-
-            _player.AddLock(terrainLock);
+            WritePacketLog(packet, $"target = ({x},{y}) primary = {isPrimary}");
+            _targetLockActionService.LockTerrain(_actionContext, new TerrainTargetLockAction(x, y, isPrimary));
         }
 
         private void HandleGetTerrainLockParameters(Packet packet)
@@ -527,34 +528,9 @@ namespace Perpetuum.Zones
 
             WritePacketLog(packet, $"d = {ammoDefinition} rc = {robotComponentType} s = {slot}");
 
-            var component = _player.GetRobotComponent(robotComponentType).ThrowIfNull(ErrorCodes.RobotComponentNotSupplied);
-            var module = component.GetModule(slot).ThrowIfNotType<ActiveModule>(ErrorCodes.ModuleNotFound);
-
-            if (!module.IsAmmoable)
-                return;
-
-            var ammo = module.GetAmmo();
-
-            if (ammoDefinition == 0)
-            {
-                if (ammo != null)
-                    module.State.UnloadAmmo();
-            }
-            else
-            {
-                if (ammo?.Definition == ammoDefinition && ammo.Quantity == module.AmmoCapacity)
-                    return;
-
-                module.CheckLoadableAmmo(ammoDefinition).ThrowIfFalse(ErrorCodes.InvalidAmmoDefinition);
-
-                if (module.ParentRobot is Player player)
-                {
-                    var tmpAmmo = (Ammo)Entity.Factory.CreateWithRandomEID(ammoDefinition);
-                    tmpAmmo.CheckEnablerExtensionsAndThrowIfFailed(player.Character, ErrorCodes.ExtensionLevelMismatchTerrain);
-                }
-
-                module.State.LoadAmmo(ammoDefinition);
-            }
+            _moduleActionService.LoadAmmo(
+                _actionContext,
+                new ModuleAmmoLoadAction(ammoDefinition, robotComponentType, slot));
         }
 
         private const int MAX_MESSAGE_LENGTH = 200;
@@ -608,21 +584,9 @@ namespace Perpetuum.Zones
 
             WritePacketLog(packet, $"lockId = {lockId} rc = {robotComponentType} s = {slot} state = {moduleState}");
 
-            var component = _player.GetRobotComponent(robotComponentType).ThrowIfNull(ErrorCodes.RobotComponentNotSupplied);
-            var module = component.GetModule(slot).ThrowIfNotType<ActiveModule>(ErrorCodes.ModuleNotFound);
-
-            if (module.IsAmmoable)
-            {
-                var ammo = module.GetAmmo();
-                if (ammo == null || ammo.Definition == 0)
-                {
-                    _player.SendModuleProcessError(module, ErrorCodes.AmmoNotFound);
-                    return;
-                }
-            }
-
-            module.Lock = _player.GetLock(lockId);
-            module.State.SwitchTo(moduleState);
+            _moduleActionService.Use(
+                _actionContext,
+                new ModuleUseAction(lockId, robotComponentType, slot, moduleState));
         }
 
         private void HandleModuleUseByCategoryFlags(Packet packet)
@@ -633,32 +597,9 @@ namespace Perpetuum.Zones
 
             WritePacketLog(packet, $"lockId = {lockId} cf = {cf} state = {moduleState}");
 
-            foreach (var module in _player.ActiveModules)
-            {
-                if (!module.IsCategory(cf))
-                    continue;
-
-                if (module.IsAmmoable)
-                {
-                    var ammo = module.GetAmmo();
-                    if (ammo == null || ammo.Quantity == 0)
-                        continue;
-                }
-
-                var lockTarget = module.ED.AttributeFlags.PrimaryLockedTarget ? _player.GetPrimaryLock().ThrowIfNull(ErrorCodes.PrimaryLockTargetNotFound) :
-                    _player.GetLock(lockId).ThrowIfNull(ErrorCodes.LockTargetNotFound);
-
-                module.Lock = lockTarget;
-
-                try
-                {
-                    module.State.SwitchTo(moduleState);
-                }
-                catch (PerpetuumException gex)
-                {
-                    _player.SendModuleProcessError(module, gex.error);
-                }
-            }
+            _moduleActionService.UseByCategory(
+                _actionContext,
+                new ModuleCategoryUseAction(lockId, cf, moduleState));
         }
 
         private void HandlePutLoot(Packet packet)
@@ -696,7 +637,7 @@ namespace Perpetuum.Zones
         {
             var lockId = packet.ReadLong();
             WritePacketLog(packet, $"lockId = {lockId}");
-            _player.CancelLock(lockId);
+            _targetLockActionService.Cancel(_actionContext, lockId);
         }
 
         private void HandleSetLayer(Packet packet)
@@ -714,7 +655,7 @@ namespace Perpetuum.Zones
         {
             var lockId = packet.ReadLong();
             WritePacketLog(packet, $"lockId = {lockId}");
-            _player.SetPrimaryLock(lockId);
+            _targetLockActionService.SetPrimary(_actionContext, lockId);
         }
 
         private void HandleTakeLoot(Packet packet)
@@ -744,28 +685,9 @@ namespace Perpetuum.Zones
 
             WritePacketLog(packet, $"rc = {robotComponent} s = {slot}");
 
-            var component = _player.GetRobotComponent(robotComponent);
-            var module = component?.GetModule(slot) as ActiveModule;
-            if (module == null)
-                return;
-
-            using (var scope = Db.CreateTransaction())
-            {
-                var container = _player.GetContainer();
-                Debug.Assert(container != null, "container != null");
-                container.EnlistTransaction();
-                module.UnequipAmmoToContainer(container);
-
-                module.Save();
-                container.Save();
-
-                Transaction.Current.OnCompleted(c =>
-                {
-                    container.SendUpdateToOwner();
-                });
-
-                scope.Complete();
-            }
+            _moduleActionService.UnloadAmmo(
+                _actionContext,
+                new ModuleAmmoUnloadAction(robotComponent, slot));
         }
 
         private void HandleUseItem(Packet packet)
