@@ -4,10 +4,8 @@ on:
   push:
     branches:
       - linux-p31
-      - perpetuum-ai/net10-port
+      - 'perpetuum-ai/**'
   pull_request:
-    branches:
-      - perpetuum-ai/p31-base
   workflow_dispatch:
 
 permissions:
@@ -22,6 +20,9 @@ jobs:
 
       - name: Build native server image
         run: docker build --tag perpetuum-server:linux-ci .
+
+      - name: Run server unit tests
+        run: docker build --target test --tag perpetuum-server:test-ci .
 
       - name: Probe console entry point
         run: docker run --rm perpetuum-server:linux-ci --help

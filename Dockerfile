@@ -16,6 +16,11 @@ RUN dotnet publish src/Perpetuum.Server/Perpetuum.Server.csproj \
     --output /out \
     /p:UseAppHost=false
 
+FROM build AS test
+
+RUN dotnet test src/Perpetuum.Tests/Perpetuum.Tests.csproj \
+    --configuration Release
+
 FROM mcr.microsoft.com/dotnet/runtime:10.0@sha256:68d35011fe04a39cca38208d392ed48f2df15653633dca16dbc4582d07342b9f
 
 WORKDIR /app
