@@ -1,22 +1,22 @@
-﻿using Perpetuum.Data;
-using Perpetuum.Host.Requests;
-using Perpetuum.Zones;
+﻿using Perpetuum.Host.Requests;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers.Zone
 {
     public class Dock : IRequestHandler<IZoneRequest>
     {
+        private readonly IDockActionService _dockActionService;
+
+        public Dock(IDockActionService dockActionService)
+        {
+            _dockActionService = dockActionService;
+        }
+
         public void HandleRequest(IZoneRequest request)
         {
-            using (var scope = Db.CreateTransaction())
-            {
-                var baseEid = request.Data.GetOrDefault<long>(k.baseEID);
-                var character = request.Session.Character;
-                var player = request.Zone.GetPlayer(character).ThrowIfNull(ErrorCodes.PlayerNotFound);
-                player.CheckDockingConditionsAndThrow(baseEid);
-                
-                scope.Complete();
-            }
+            var action = new DockAction(request.Data.GetOrDefault<long>(k.baseEID));
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            _dockActionService.Execute(context, action);
         }
     }
 }
