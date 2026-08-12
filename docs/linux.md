@@ -293,11 +293,15 @@ Survey progress is retained across ordinary dock, probe resupply, and redeploy
 trips, so a fitted module with fewer charges than `MaxSurveySites` eventually
 continues into the outer rings instead of rescanning the inner ring forever.
 After redeploy, the miner consumes no probe at the terminal: it replays the
-deterministic prior candidate trail as outbound transit, with every waypoint
-subject to normal pathfinding and movement, and resumes scanning only at the
-persisted frontier. Positions actually reached during transit become the
-return breadcrumbs for that deployment. A restart during transit conservatively
-returns the actor to base before reconstructing the route on its next trip.
+persisted sequence of positions it physically reached on prior trips, with
+every waypoint subject to normal pathfinding and movement, and resumes scanning
+only at the persisted frontier. Because normal undocking can choose a different
+side of a large terminal, the outbound trip first walks short perimeter legs
+around the terminal to the original survey origin instead of crossing the
+terminal or treating the new spawn as a new origin. Positions actually reached
+during that deployment separately become its return breadcrumbs. A restart
+during transit conservatively returns the actor to base before replaying the
+durable route on its next trip.
 Progress resets after a deposit observation or bounded survey exhaustion.
 Return trips first retrace the survey positions the actor actually reached, in
 reverse order, so difficult terrain is exited along demonstrated paths. If a
@@ -308,15 +312,18 @@ radius. Subsequent attempts rotate through deterministic escape and approach
 points instead of retrying the identical endpoint indefinitely.
 
 For wider configured surveys, each adjacent spiral leg—not the total distance
-from the terminal—is constrained to the navigator's safe range. The origin and
-next site already persisted in `dbo.ai_actor_work_state` deterministically
-reconstruct the candidate trail after a restart. Unrouteable candidates are
-again rejected by normal pathfinding; the reconstruction contains no mineral
-result or hidden terrain-layer data.
+from the terminal—is constrained to the navigator's safe range. The original
+origin, next site, and reached route persisted in `dbo.ai_actor_work_state`
+survive dock, resupply, and restart. Older rows without a reached route fall
+back once to deterministic candidate reconstruction; successful traversal then
+records only the positions normal pathfinding actually reached. The route
+contains no mineral result or hidden terrain-layer data.
 
 Mining progress requires `dbo.ai_actor_work_state`, created by
-`database/overlays/002_ai_actor_work_state.sql`. Each transition records the
-base, zone, return origin, observed target, material, and next survey site. A
+`database/overlays/002_ai_actor_work_state.sql` and extended by
+`database/overlays/003_ai_actor_survey_route.sql`. Each transition records the
+base, zone, return origin, observed target, material, next survey site, and the
+ordered coordinates the actor already reached through normal movement. A
 restart resumes a target only when those facts still match; otherwise the actor
 discards stale coordinates and uses normal base recovery. Matching survey
 progress remains available after a server restart. The separate
