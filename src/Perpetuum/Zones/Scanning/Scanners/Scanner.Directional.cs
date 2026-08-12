@@ -1,6 +1,8 @@
-﻿using System.Drawing;
+﻿using System;
+using System.Drawing;
 using Perpetuum.EntityFramework;
 using Perpetuum.Zones.Scanning.Ammos;
+using Perpetuum.Zones.Scanning.Results;
 using Perpetuum.Zones.Terrains;
 using Perpetuum.Zones.Terrains.Materials;
 
@@ -34,9 +36,17 @@ namespace Perpetuum.Zones.Scanning.Scanners
             var isInRange = fromPosition.IsInRangeOf2D(nearestMineralPosition, GOAL_RANGE);
             var direction = fromPosition.DirectionTo(nearestMineralPosition);
             direction = RandomizeDirection(direction);
+            var encodedDirection = (byte)(direction * 255);
 
-            var packet = BuildPacket(ammo.MaterialType, fromPosition, nearestMineralPosition, direction, isInRange);
-            _player.Session.SendPacket(packet);
+            var observation = new DirectionalMineralScanObservation(
+                ammo.MaterialType,
+                fromPosition,
+                nearestMineralPosition != Point.Empty,
+                encodedDirection,
+                isInRange,
+                DateTime.UtcNow);
+            _module.LastObservation = observation;
+            _player.Session.SendPacket(observation.ToPacket());
 
             if (!isInRange)
                 return;
@@ -50,17 +60,6 @@ namespace Perpetuum.Zones.Scanning.Scanners
             direction += randomModifier;
             MathHelper.NormalizeDirection(ref direction);
             return direction;
-        }
-
-        private static Packet BuildPacket(MaterialType materialType, Position fromPosition, Point nearestMineralPosition, double direction, bool isInRange)
-        {
-            var packet = new Packet(ZoneCommand.ScanMineralDirectionalResult);
-            packet.AppendInt((int) materialType);
-            packet.AppendPoint(fromPosition);
-            packet.AppendBool(nearestMineralPosition != Point.Empty);
-            packet.AppendByte((byte) (direction*255));
-            packet.AppendBool(isInRange);
-            return packet;
         }
 
     }

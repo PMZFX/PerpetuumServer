@@ -14,6 +14,7 @@ namespace Perpetuum.Zones.Scanning.Modules
         private readonly ItemProperty _miningProbeAccuracy;
 
         public MineralScanResult LastScanResult { get; set; }
+        public IMineralScanObservation LastObservation { get; internal set; }
 
         public GeoScannerModule(CategoryFlags ammoCategoryFlags,Scanner.Factory scannerFactory) : base(ammoCategoryFlags)
         {
