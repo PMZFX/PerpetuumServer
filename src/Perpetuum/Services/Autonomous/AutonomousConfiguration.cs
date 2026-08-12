@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Newtonsoft.Json;
+using Perpetuum.Zones.Terrains.Materials;
 
 namespace Perpetuum.Services.Autonomous
 {
@@ -48,6 +49,13 @@ namespace Perpetuum.Services.Autonomous
                         throw new InvalidOperationException($"Autonomous patrol options for character {actor.CharacterId} cannot be null.");
                     actor.Patrol.Validate(actor.CharacterId);
                 }
+
+                if (string.Equals(actor.Behavior?.Trim(), "mining", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Mining == null)
+                        throw new InvalidOperationException($"Autonomous mining options for character {actor.CharacterId} cannot be null.");
+                    actor.Mining.Validate(actor.CharacterId);
+                }
             }
         }
     }
@@ -66,6 +74,68 @@ namespace Perpetuum.Services.Autonomous
         public int RecoveryRevision { get; set; }
 
         public AutonomousPatrolOptions Patrol { get; set; } = new AutonomousPatrolOptions();
+
+        public AutonomousMiningOptions Mining { get; set; } = new AutonomousMiningOptions();
+    }
+
+    public sealed class AutonomousMiningOptions
+    {
+        [DefaultValue("Titan"), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public string Material { get; set; } = "Titan";
+
+        [DefaultValue(0.45), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double Throttle { get; set; } = 0.45;
+
+        [DefaultValue(0.75), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double CargoFillRatio { get; set; } = 0.75;
+
+        [DefaultValue(15), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int DockedDwellSeconds { get; set; } = 15;
+
+        [DefaultValue(10), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int ScanTimeoutSeconds { get; set; } = 10;
+
+        [DefaultValue(8), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int LockTimeoutSeconds { get; set; } = 8;
+
+        [DefaultValue(300), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxMiningSeconds { get; set; } = 300;
+
+        [DefaultValue(3), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxScanAttempts { get; set; } = 3;
+
+        public AutonomousThreatOptions Threat { get; set; } = new AutonomousThreatOptions();
+
+        public MaterialType GetMaterialType()
+        {
+            return Enum.TryParse(Material, true, out MaterialType materialType)
+                ? materialType
+                : MaterialType.Undefined;
+        }
+
+        public void Validate(int characterId)
+        {
+            MaterialType materialType = GetMaterialType();
+            if (materialType == MaterialType.Undefined || !Enum.IsDefined(typeof(MaterialType), materialType))
+                throw new InvalidOperationException($"Autonomous mining material for character {characterId} is invalid.");
+            if (double.IsNaN(Throttle) || double.IsInfinity(Throttle) || Throttle < 0.1 || Throttle > 1.0)
+                throw new InvalidOperationException($"Autonomous mining throttle for character {characterId} must be between 0.1 and 1.0.");
+            if (double.IsNaN(CargoFillRatio) || double.IsInfinity(CargoFillRatio) || CargoFillRatio <= 0 || CargoFillRatio > 1.0)
+                throw new InvalidOperationException($"Autonomous mining cargo ratio for character {characterId} must be greater than 0 and at most 1.");
+            if (DockedDwellSeconds < 0 || DockedDwellSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous mining docked dwell for character {characterId} must be between 0 and 3600 seconds.");
+            if (ScanTimeoutSeconds < 1 || ScanTimeoutSeconds > 120)
+                throw new InvalidOperationException($"Autonomous mining scan timeout for character {characterId} must be between 1 and 120 seconds.");
+            if (LockTimeoutSeconds < 1 || LockTimeoutSeconds > 60)
+                throw new InvalidOperationException($"Autonomous mining lock timeout for character {characterId} must be between 1 and 60 seconds.");
+            if (MaxMiningSeconds < 1 || MaxMiningSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous mining duration for character {characterId} must be between 1 and 3600 seconds.");
+            if (MaxScanAttempts < 1 || MaxScanAttempts > 20)
+                throw new InvalidOperationException($"Autonomous mining scan attempts for character {characterId} must be between 1 and 20.");
+            if (Threat == null)
+                throw new InvalidOperationException($"Autonomous mining threat options for character {characterId} cannot be null.");
+            Threat.Validate(characterId);
+        }
     }
 
     public sealed class AutonomousPatrolOptions
