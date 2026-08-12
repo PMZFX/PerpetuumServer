@@ -163,6 +163,9 @@ If a controlled shutdown persists an autonomous character in the field, the
 next enabled startup reloads that real character through the same player loader
 used by client zone authentication. Patrol recovery prioritizes a normal return
 to the character's current docking base before beginning another cycle.
+Configured dock dwell is a minimum: the actor also waits for the character's
+authoritative next-undock time, so a short dwell cannot bypass or repeatedly
+fail against the normal post-dock cooldown.
 
 Patrol perception projects the real player's existing visible-unit set; it
 does not enumerate the zone. This is the same set that drives client unit

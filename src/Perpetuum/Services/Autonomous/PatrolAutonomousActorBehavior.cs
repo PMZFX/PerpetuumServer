@@ -208,7 +208,11 @@ namespace Perpetuum.Services.Autonomous
             int dwellSeconds = _retreatingFromThreat
                 ? _definition.Patrol.Threat.DockedDwellSeconds
                 : _definition.Patrol.DockedDwellSeconds;
-            if (_stateElapsed < TimeSpan.FromSeconds(dwellSeconds))
+            if (!AutonomousUndockPolicy.IsReady(
+                    _stateElapsed,
+                    TimeSpan.FromSeconds(dwellSeconds),
+                    context.Actor.NextAvailableUndockTime,
+                    DateTime.Now))
                 return;
 
             _retreatingFromThreat = false;
