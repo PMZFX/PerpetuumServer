@@ -68,6 +68,26 @@ namespace Perpetuum.Tests.Services.Autonomous
                 AutonomousMiningReturnPolicy.Assess(0.1, 0.75, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1), false, true));
         }
 
+        [Fact]
+        public void SurveySitesFormTwoDeterministicRingsWithoutHiddenWorldData()
+        {
+            var origin = new Position(100, 200);
+
+            Assert.Equal(new Position(118, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 0, 18));
+            Assert.Equal(new Position(118, 182), AutonomousMiningSurveyPolicy.GetSite(origin, 7, 18));
+            Assert.Equal(new Position(136, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 8, 18));
+            Assert.Equal(new Position(136, 164), AutonomousMiningSurveyPolicy.GetSite(origin, 15, 18));
+        }
+
+        [Fact]
+        public void SurveySiteRejectsInvalidInputs()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AutonomousMiningSurveyPolicy.GetSite(new Position(0, 0), -1, 18));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AutonomousMiningSurveyPolicy.GetSite(new Position(0, 0), 0, 0));
+        }
+
         private static AutonomousWorkState State(string phase, Position? target)
         {
             return new AutonomousWorkState(

@@ -29,6 +29,7 @@ namespace Perpetuum.Services.Autonomous
             RecoveringWorld,
             WaitingForScan,
             ScanRetry,
+            TravellingToSurvey,
             TravellingToDeposit,
             LockingDeposit,
             Mining,
@@ -69,6 +70,7 @@ namespace Perpetuum.Services.Autonomous
         private AutonomousMiningModuleSnapshot _scanner;
         private IMineralScanObservation _observationBeforeScan;
         private int _scanAttempts;
+        private int _surveySiteIndex;
         private bool _robotRecoveryRequired;
         private bool _cargoHoldAudited;
         private bool _retreatingFromThreat;
@@ -129,6 +131,7 @@ namespace Perpetuum.Services.Autonomous
             _scanner = null;
             _observationBeforeScan = null;
             _scanAttempts = 0;
+            _surveySiteIndex = 0;
             _miningElapsed = TimeSpan.Zero;
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
@@ -244,6 +247,9 @@ namespace Perpetuum.Services.Autonomous
                 case MiningState.ScanRetry:
                     if (_stateElapsed >= ScanRetryDelay)
                         BeginScan(context);
+                    break;
+                case MiningState.TravellingToSurvey:
+                    UpdateSurveyTravel(context, elapsed);
                     break;
                 case MiningState.TravellingToDeposit:
                     UpdateTargetTravel(context, elapsed);
@@ -444,12 +450,20 @@ namespace Perpetuum.Services.Autonomous
                     return;
                 }
 
-                RetryOrReturn(context, "scan_empty");
+                BeginSurvey(context);
                 return;
             }
 
             if (_stateElapsed >= TimeSpan.FromSeconds(_definition.Mining.ScanTimeoutSeconds))
-                RetryOrReturn(context, "scan_timeout");
+            {
+                Player player = context.Actor.GetPlayerRobotFromZone();
+                ActiveModule scannerModule = player?.GetModule(_scanner.ModuleEid) as ActiveModule;
+                if (scannerModule?.State.Type == ModuleStateType.Idle)
+                    RetryOrReturn(context, "scan_timeout");
+                else if (_stateElapsed >= TimeSpan.FromSeconds(
+                             _definition.Mining.ScanTimeoutSeconds + 120))
+                    BeginReturn(context, "scanner_busy_timeout");
+            }
         }
 
         private void RetryOrReturn(GameActionContext context, string reason)
@@ -460,6 +474,55 @@ namespace Perpetuum.Services.Autonomous
                 return;
             }
             BeginReturn(context, reason);
+        }
+
+        private void BeginSurvey(GameActionContext context)
+        {
+            if (!_origin.HasValue || _surveySiteIndex >= _definition.Mining.MaxSurveySites)
+            {
+                _audit.Write(context.Actor.Id, "mining_survey_exhausted", AutonomousActorStatus.Active,
+                    $"sites_{_surveySiteIndex}");
+                BeginReturn(context, "survey_exhausted");
+                return;
+            }
+
+            while (_surveySiteIndex < _definition.Mining.MaxSurveySites)
+            {
+                int site = _surveySiteIndex++;
+                Position candidate = AutonomousMiningSurveyPolicy.GetSite(
+                    _origin.Value,
+                    site,
+                    _definition.Mining.SurveyStepDistance);
+                if (!_navigation.TryStart(context, candidate, _definition.Mining.Throttle))
+                    continue;
+
+                SetState(context, MiningState.TravellingToSurvey);
+                _audit.Write(context.Actor.Id, "mining_survey_travel", AutonomousActorStatus.Active,
+                    $"site_{site + 1}");
+                return;
+            }
+
+            _audit.Write(context.Actor.Id, "mining_survey_exhausted", AutonomousActorStatus.Active,
+                $"sites_{_surveySiteIndex}");
+            BeginReturn(context, "survey_unreachable");
+        }
+
+        private void UpdateSurveyTravel(GameActionContext context, TimeSpan elapsed)
+        {
+            AutonomousNavigationStatus status = _navigation.Update(context, elapsed);
+            if (status == AutonomousNavigationStatus.Arrived)
+            {
+                _navigation.Stop(context);
+                _scanAttempts = 0;
+                _audit.Write(context.Actor.Id, "mining_survey_arrived", AutonomousActorStatus.Active,
+                    $"site_{_surveySiteIndex}");
+                BeginScan(context);
+            }
+            else if (status == AutonomousNavigationStatus.Blocked || status == AutonomousNavigationStatus.Stuck)
+            {
+                _navigation.Stop(context);
+                BeginSurvey(context);
+            }
         }
 
         private void BeginTargetTravel(GameActionContext context, bool resumed)

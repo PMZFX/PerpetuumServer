@@ -242,10 +242,12 @@ for the configured material.
     "Throttle": 0.45,
     "CargoFillRatio": 0.75,
     "DockedDwellSeconds": 15,
-    "ScanTimeoutSeconds": 10,
+    "ScanTimeoutSeconds": 30,
     "LockTimeoutSeconds": 8,
     "MaxMiningSeconds": 300,
     "MaxScanAttempts": 3,
+    "SurveyStepDistance": 18,
+    "MaxSurveySites": 16,
     "Resupply": {
       "Enabled": true,
       "ReloadBelowRatio": 0.5,
@@ -273,6 +275,12 @@ noisy tile grid produced by a fitted scanner and sent to the game client.
 Equipment selection sees only the robot fitting and loaded ammunition; cargo
 decisions see only the active robot's own inventory and capacity. Scanner
 probes and mining charges are consumed through the normal module state machine.
+An empty scan advances through at most `MaxSurveySites` deterministic search
+positions in two rings around the terminal spawn, separated by
+`SurveyStepDistance`. Every position must be reached by normal pathfinding and
+movement before another probe is consumed. Survey positions are not mineral
+facts and are not persisted as deposit targets; only a non-empty scanner
+observation can authorize travel to a mining tile.
 
 Mining progress requires `dbo.ai_actor_work_state`, created by
 `database/overlays/002_ai_actor_work_state.sql`. Each transition records the

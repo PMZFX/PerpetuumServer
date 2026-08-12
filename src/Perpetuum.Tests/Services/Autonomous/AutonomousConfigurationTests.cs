@@ -200,5 +200,19 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             Assert.Throws<InvalidOperationException>(() => options.Validate(12));
         }
+
+        [Theory]
+        [InlineData(1, 16)]
+        [InlineData(18, 17)]
+        public void InvalidMiningSurveyBoundsAreRejected(int stepDistance, int maxSites)
+        {
+            var options = new AutonomousMiningOptions
+            {
+                SurveyStepDistance = stepDistance,
+                MaxSurveySites = maxSites
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
     }
 }

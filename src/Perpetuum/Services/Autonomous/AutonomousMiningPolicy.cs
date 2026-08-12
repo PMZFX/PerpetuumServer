@@ -74,4 +74,33 @@ namespace Perpetuum.Services.Autonomous
             return AutonomousMiningReturnReason.None;
         }
     }
+
+    public static class AutonomousMiningSurveyPolicy
+    {
+        private static readonly (int X, int Y)[] Directions =
+        {
+            (1, 0),
+            (1, 1),
+            (0, 1),
+            (-1, 1),
+            (-1, 0),
+            (-1, -1),
+            (0, -1),
+            (1, -1)
+        };
+
+        public static Position GetSite(Position origin, int siteIndex, int stepDistance)
+        {
+            if (siteIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(siteIndex));
+            if (stepDistance <= 0)
+                throw new ArgumentOutOfRangeException(nameof(stepDistance));
+
+            int ring = siteIndex / Directions.Length + 1;
+            (int x, int y) = Directions[siteIndex % Directions.Length];
+            return new Position(
+                origin.X + x * ring * stepDistance,
+                origin.Y + y * ring * stepDistance);
+        }
+    }
 }
