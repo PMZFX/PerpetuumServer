@@ -124,5 +124,19 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
+
+        [Fact]
+        public void NegativeRecoveryRevisionIsRejected()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors =
+                {
+                    new AutonomousActorDefinition { CharacterId = 10, RecoveryRevision = -1 }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
     }
 }

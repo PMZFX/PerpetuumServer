@@ -1619,6 +1619,9 @@ namespace Perpetuum.Bootstrapper
                 return configuration.Autonomous ?? new AutonomousConfiguration();
             }).SingleInstance();
             _ = _builder.RegisterType<AutonomousActorAudit>().As<IAutonomousActorAudit>().SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousActorStateStore>()
+                .As<IAutonomousActorStateStore>()
+                .SingleInstance();
             _ = _builder.RegisterType<AutonomousActorRegistry>().As<IAutonomousActorRegistry>().SingleInstance();
             _ = _builder.RegisterType<IdleAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("idle");

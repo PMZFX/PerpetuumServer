@@ -132,6 +132,7 @@ actor stops, replans twice, then reports a blocked route.
       "CharacterId": 123,
       "Enabled": true,
       "Behavior": "patrol",
+      "RecoveryRevision": 0,
       "Patrol": {
         "Radius": 14,
         "Throttle": 0.45,
@@ -196,14 +197,21 @@ Module activation and ammunition operations continue through the existing
 module state machine and inventory transactions, preserving lock, range, line
 of sight, core, ammunition, aggression, PvP, cycle, and damage rules.
 
-The patrol remembers the robot it started with. If that robot is destroyed,
-removed, or replaced while the behavior is running, navigation stops and a
-recovery audit event is emitted. It does not automatically accept a starter or
-replacement robot. Normal player-death processing remains responsible for
-docking, loot, insurance, robot disposal, and replacement selection. Defensive
-combat is separately opt-in through `Patrol.Defense.Enabled`. It subscribes to
-the controlled player's normal positive-damage event and considers only that
-actual source; merely seeing a hostile never authorizes a shot. The source must
+Patrol requires the project database overlay that creates
+`dbo.ai_actor_state`. It durably records the expected robot. If that robot is
+destroyed, removed, or replaced, navigation stops and a recovery audit event is
+emitted; restarting the server or receiving a starter robot does not clear the
+condition. Normal player-death processing remains responsible for docking,
+loot, insurance, robot disposal, and replacement selection. After a legitimate
+replacement has been selected, increment that actor's `RecoveryRevision` and
+restart or reload the actor. A revision is consumed only when an active robot
+exists, and the acknowledgment is audited. A future replacement planner will
+use the same state-store boundary instead of bypassing it.
+
+Defensive combat is separately opt-in through `Patrol.Defense.Enabled`. It
+subscribes to the controlled player's normal positive-damage event and
+considers only that actual source; merely seeing a hostile never authorizes a
+shot. The source must
 still be alive, inside `ResponseRange`, and present in the player's maintained
 visible set. The behavior requests one normal primary lock, waits no longer
 than `LockTimeoutSeconds`, and activates only fitted weapons with loaded

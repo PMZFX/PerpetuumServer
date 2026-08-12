@@ -12,7 +12,8 @@ namespace Perpetuum.Services.Autonomous
     /// Detects loss of the robot a behavior started with. The normal player
     /// death flow remains responsible for docking, loot, insurance, trash,
     /// starter-robot creation, and active-robot selection. Autonomous behavior
-    /// pauses until a later behavior start accepts the player's chosen robot.
+    /// pauses until durable recovery state explicitly accepts the player's
+    /// chosen robot.
     /// </summary>
     public static class AutonomousRobotRecoveryPolicy
     {
