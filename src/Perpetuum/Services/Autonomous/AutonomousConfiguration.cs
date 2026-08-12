@@ -78,6 +78,8 @@ namespace Perpetuum.Services.Autonomous
 
         public AutonomousThreatOptions Threat { get; set; } = new AutonomousThreatOptions();
 
+        public AutonomousDefenseOptions Defense { get; set; } = new AutonomousDefenseOptions();
+
         public void Validate(int characterId)
         {
             if (Radius < 4 || Radius > 48)
@@ -96,6 +98,11 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous threat options for character {characterId} cannot be null.");
 
             Threat.Validate(characterId);
+
+            if (Defense == null)
+                throw new InvalidOperationException($"Autonomous defense options for character {characterId} cannot be null.");
+
+            Defense.Validate(characterId);
         }
     }
 
@@ -117,6 +124,33 @@ namespace Perpetuum.Services.Autonomous
 
             if (DockedDwellSeconds < 0 || DockedDwellSeconds > 3600)
                 throw new InvalidOperationException($"Autonomous threat dwell for character {characterId} must be between 0 and 3600 seconds.");
+        }
+    }
+
+    public sealed class AutonomousDefenseOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(60.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double ResponseRange { get; set; } = 60.0;
+
+        [DefaultValue(8), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int LockTimeoutSeconds { get; set; } = 8;
+
+        [DefaultValue(20), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxEngagementSeconds { get; set; } = 20;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(ResponseRange) || double.IsInfinity(ResponseRange) || ResponseRange < 1 || ResponseRange > 200)
+                throw new InvalidOperationException($"Autonomous defense response range for character {characterId} must be between 1 and 200.");
+
+            if (LockTimeoutSeconds < 1 || LockTimeoutSeconds > 60)
+                throw new InvalidOperationException($"Autonomous defense lock timeout for character {characterId} must be between 1 and 60 seconds.");
+
+            if (MaxEngagementSeconds <= LockTimeoutSeconds || MaxEngagementSeconds > 300)
+                throw new InvalidOperationException($"Autonomous defense engagement limit for character {characterId} must be greater than its lock timeout and at most 300 seconds.");
         }
     }
 }

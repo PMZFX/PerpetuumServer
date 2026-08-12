@@ -141,6 +141,12 @@ actor stops, replans twice, then reports a blocked route.
           "Enabled": true,
           "ResponseRange": 35.0,
           "DockedDwellSeconds": 60
+        },
+        "Defense": {
+          "Enabled": false,
+          "ResponseRange": 60.0,
+          "LockTimeoutSeconds": 8,
+          "MaxEngagementSeconds": 20
         }
       }
     }
@@ -157,6 +163,9 @@ If a controlled shutdown persists an autonomous character in the field, the
 next enabled startup reloads that real character through the same player loader
 used by client zone authentication. Patrol recovery prioritizes a normal return
 to the character's current docking base before beginning another cycle.
+Configured dock dwell is a minimum: the actor also waits for the character's
+authoritative next-undock time, so a short dwell cannot bypass or repeatedly
+fail against the normal post-dock cooldown.
 
 Patrol perception projects the real player's existing visible-unit set; it
 does not enumerate the zone. This is the same set that drives client unit
@@ -171,7 +180,7 @@ actor to return along its normal route and dock. An actor already returning or
 docking continues that work instead of restarting it. After a threat-driven
 dock it waits `Threat.DockedDwellSeconds` before another patrol. The policy
 does not target, activate modules, modify combat state, or grant hidden world
-knowledge; combat behavior is a separate future slice.
+knowledge.
 
 Targeting and module operations are nevertheless exposed as shared,
 authenticated game actions for later behaviors. A unit can be submitted for
@@ -187,8 +196,22 @@ removed, or replaced while the behavior is running, navigation stops and a
 recovery audit event is emitted. It does not automatically accept a starter or
 replacement robot. Normal player-death processing remains responsible for
 docking, loot, insurance, robot disposal, and replacement selection. Defensive
-combat is intentionally deferred until it can react to an actual damage source
-rather than attacking every visible hostile NPC.
+combat is separately opt-in through `Patrol.Defense.Enabled`. It subscribes to
+the controlled player's normal positive-damage event and considers only that
+actual source; merely seeing a hostile never authorizes a shot. The source must
+still be alive, inside `ResponseRange`, and present in the player's maintained
+visible set. The behavior requests one normal primary lock, waits no longer
+than `LockTimeoutSeconds`, and activates only fitted weapons with loaded
+ammunition. Normal module rules still decide range, line of sight, core,
+aggression, PvP legality, cycles, and damage.
+
+The response has a hard `MaxEngagementSeconds` limit measured from the first
+damage event. More damage cannot extend it, and a different attacker cannot
+cause target thrashing during that response. The patrol retreats at the same
+time, deactivates weapons and removes its own defense lock when the source is
+lost or the limit expires, then waits for normal aggression and docking rules.
+This feature does not choose targets proactively, create ammunition, repair the
+robot, or replace a destroyed robot.
 
 Stop with enough time for zone-layer persistence:
 

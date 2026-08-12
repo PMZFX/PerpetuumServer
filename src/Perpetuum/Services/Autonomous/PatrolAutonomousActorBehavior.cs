@@ -1,15 +1,20 @@
 using System;
 using System.Linq;
 using Perpetuum.ExportedTypes;
+using Perpetuum.Modules;
 using Perpetuum.Players;
 using Perpetuum.Services.Actions;
+using Perpetuum.Units;
+using Perpetuum.Zones.Locking;
+using Perpetuum.Zones.Locking.Locks;
 
 namespace Perpetuum.Services.Autonomous
 {
     /// <summary>
-    /// A bounded, non-combat field loop: undock through the player action,
-    /// travel using normal movement input, return to the undock point, and dock
-    /// through the player action. Human ownership suspends and resets the loop.
+    /// A bounded field loop: undock through the player action, travel using
+    /// normal movement input, return to the undock point, and dock through the
+    /// player action. Optional combat is defensive and damage-triggered only.
+    /// Human ownership suspends and resets the loop.
     /// </summary>
     public sealed class PatrolAutonomousActorBehavior : IAutonomousActorBehavior
     {
@@ -32,7 +37,11 @@ namespace Perpetuum.Services.Autonomous
         private readonly IDockActionService _dockActionService;
         private readonly IAutonomousNavigationService _navigation;
         private readonly IAutonomousPerceptionService _perception;
+        private readonly IAutonomousDamageMonitor _damageMonitor;
+        private readonly ITargetLockActionService _targetLockActionService;
+        private readonly IModuleActionService _moduleActionService;
         private readonly IAutonomousActorAudit _audit;
+        private AutonomousDefensiveEngagement _defense;
         private PatrolState _state;
         private TimeSpan _stateElapsed;
         private Position _origin;
@@ -41,6 +50,7 @@ namespace Perpetuum.Services.Autonomous
         private bool _recoveringWorldEntry;
         private bool _retreatingFromThreat;
         private bool _robotRecoveryRequired;
+        private bool _defenseLockOwned;
 
         public PatrolAutonomousActorBehavior(
             AutonomousActorDefinition definition,
@@ -48,6 +58,9 @@ namespace Perpetuum.Services.Autonomous
             IDockActionService dockActionService,
             IAutonomousNavigationService navigation,
             IAutonomousPerceptionService perception,
+            IAutonomousDamageMonitor damageMonitor,
+            ITargetLockActionService targetLockActionService,
+            IModuleActionService moduleActionService,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
@@ -55,6 +68,9 @@ namespace Perpetuum.Services.Autonomous
             _dockActionService = dockActionService;
             _navigation = navigation;
             _perception = perception ?? throw new ArgumentNullException(nameof(perception));
+            _damageMonitor = damageMonitor ?? throw new ArgumentNullException(nameof(damageMonitor));
+            _targetLockActionService = targetLockActionService ?? throw new ArgumentNullException(nameof(targetLockActionService));
+            _moduleActionService = moduleActionService ?? throw new ArgumentNullException(nameof(moduleActionService));
             _audit = audit;
         }
 
@@ -63,6 +79,10 @@ namespace Perpetuum.Services.Autonomous
         public void Start(GameActionContext context)
         {
             _definition.Patrol.Validate(_definition.CharacterId);
+            _defense = new AutonomousDefensiveEngagement(
+                TimeSpan.FromSeconds(_definition.Patrol.Defense.LockTimeoutSeconds),
+                TimeSpan.FromSeconds(_definition.Patrol.Defense.MaxEngagementSeconds));
+            _damageMonitor.Reset();
             _navigation.Stop(context);
             _state = PatrolState.Docked;
             _stateElapsed = context.Actor.IsDocked
@@ -73,15 +93,27 @@ namespace Perpetuum.Services.Autonomous
             _recoveringWorldEntry = !context.Actor.IsDocked;
             _retreatingFromThreat = false;
             _robotRecoveryRequired = false;
+            _defenseLockOwned = false;
         }
 
         public void Stop(GameActionContext context)
         {
+            Player player = context.Actor.GetPlayerRobotFromZone();
+            if (player != null)
+            {
+                StopDefensiveModules(context);
+                UnitLock defenseLock = FindDefenseLock(player);
+                if (_defenseLockOwned && defenseLock != null)
+                    _targetLockActionService.Cancel(context, defenseLock.Id);
+            }
+            _damageMonitor.Reset();
+            _defense?.Reset();
             _navigation.Reset();
             _state = PatrolState.Docked;
             _stateElapsed = TimeSpan.Zero;
             _retreatingFromThreat = false;
             _robotRecoveryRequired = false;
+            _defenseLockOwned = false;
         }
 
         public void Update(GameActionContext context, TimeSpan elapsed)
@@ -93,6 +125,9 @@ namespace Perpetuum.Services.Autonomous
 
             if (context.Actor.IsDocked)
             {
+                _damageMonitor.Reset();
+                _defense?.Reset();
+                _defenseLockOwned = false;
                 UpdateDocked(context);
                 return;
             }
@@ -103,6 +138,12 @@ namespace Perpetuum.Services.Autonomous
 
             if (HandleRobotRecovery(context, player.States.Dead))
                 return;
+
+            if (_definition.Patrol.Defense.Enabled)
+            {
+                _damageMonitor.Bind(player);
+                HandleDefensiveCombat(context, player, elapsed);
+            }
 
             if (HandleVisibleThreat(context, player))
                 return;
@@ -167,7 +208,11 @@ namespace Perpetuum.Services.Autonomous
             int dwellSeconds = _retreatingFromThreat
                 ? _definition.Patrol.Threat.DockedDwellSeconds
                 : _definition.Patrol.DockedDwellSeconds;
-            if (_stateElapsed < TimeSpan.FromSeconds(dwellSeconds))
+            if (!AutonomousUndockPolicy.IsReady(
+                    _stateElapsed,
+                    TimeSpan.FromSeconds(dwellSeconds),
+                    context.Actor.NextAvailableUndockTime,
+                    DateTime.Now))
                 return;
 
             _retreatingFromThreat = false;
@@ -327,6 +372,99 @@ namespace Perpetuum.Services.Autonomous
             AutonomousThreatDirective directive = AutonomousThreatResponsePolicy.Select(
                 assessment,
                 GetFieldActivity());
+            return ApplyRetreatDirective(context, player, directive);
+        }
+
+        private void HandleDefensiveCombat(GameActionContext context, Player player, TimeSpan elapsed)
+        {
+            if (_damageMonitor.TryTakeAttacker(out long attackerEid) && _defense.RecordDamage(attackerEid))
+            {
+                _audit.Write(context.Actor.Id, "patrol_damage_response", AutonomousActorStatus.Active,
+                    $"eid_{attackerEid}");
+                BeginDamageRetreat(context, player);
+            }
+
+            if (_defense.State == AutonomousDefenseState.Idle)
+                return;
+
+            Unit target = player.Zone?.GetUnit(_defense.TargetEid);
+            UnitLock defenseLock = FindDefenseLock(player);
+            bool targetAvailable = target != null &&
+                                   target.InZone &&
+                                   !target.States.Dead &&
+                                   player.IsVisible(target) &&
+                                   player.GetDistance(target) <= _definition.Patrol.Defense.ResponseRange;
+            bool hasUsableWeapon = player.ActiveModules.Any(module =>
+                module.IsCategory(CategoryFlags.cf_weapons) &&
+                (!module.IsAmmoable || module.GetAmmo()?.Quantity > 0));
+            AutonomousDefenseLockState lockState = GetDefenseLockState(defenseLock);
+            AutonomousDefenseDecision decision = _defense.Update(
+                elapsed,
+                targetAvailable,
+                hasUsableWeapon,
+                lockState);
+
+            switch (decision.Directive)
+            {
+                case AutonomousDefenseDirective.RequestLock:
+                    _targetLockActionService.LockUnit(
+                        context,
+                        new UnitTargetLockAction(decision.TargetEid, true));
+                    _defenseLockOwned = true;
+                    _audit.Write(context.Actor.Id, "patrol_defense_lock", AutonomousActorStatus.Active,
+                        $"eid_{decision.TargetEid}");
+                    break;
+
+                case AutonomousDefenseDirective.Engage:
+                    _targetLockActionService.SetPrimary(context, defenseLock.Id);
+                    _moduleActionService.UseByCategory(
+                        context,
+                        new ModuleCategoryUseAction(
+                            defenseLock.Id,
+                            CategoryFlags.cf_weapons,
+                            ModuleStateType.AutoRepeat));
+                    _audit.Write(context.Actor.Id, "patrol_defense_engage", AutonomousActorStatus.Active,
+                        $"eid_{decision.TargetEid}");
+                    break;
+
+                case AutonomousDefenseDirective.Disengage:
+                    StopDefensiveModules(context);
+                    if (_defenseLockOwned && defenseLock != null)
+                        _targetLockActionService.Cancel(context, defenseLock.Id);
+                    _audit.Write(context.Actor.Id, "patrol_defense_disengage", AutonomousActorStatus.Active,
+                        decision.EndReason.ToString());
+                    _defenseLockOwned = false;
+                    _defense.CompleteDisengagement();
+                    break;
+            }
+        }
+
+        private void BeginDamageRetreat(GameActionContext context, Player player)
+        {
+            _retreatingFromThreat = true;
+            AutonomousThreatDirective directive;
+            switch (GetFieldActivity())
+            {
+                case AutonomousFieldActivity.Deploying:
+                    directive = AutonomousThreatDirective.Dock;
+                    break;
+                case AutonomousFieldActivity.TravellingOutbound:
+                case AutonomousFieldActivity.Dwelling:
+                    directive = AutonomousThreatDirective.Return;
+                    break;
+                default:
+                    directive = AutonomousThreatDirective.None;
+                    break;
+            }
+
+            ApplyRetreatDirective(context, player, directive);
+        }
+
+        private bool ApplyRetreatDirective(
+            GameActionContext context,
+            Player player,
+            AutonomousThreatDirective directive)
+        {
             if (directive == AutonomousThreatDirective.Dock)
             {
                 _origin = player.CurrentPosition;
@@ -344,6 +482,33 @@ namespace Perpetuum.Services.Autonomous
             return false;
         }
 
+        private void StopDefensiveModules(GameActionContext context)
+        {
+            if (_defense == null || _defense.State == AutonomousDefenseState.Idle)
+                return;
+
+            _moduleActionService.DeactivateByCategory(context, CategoryFlags.cf_weapons);
+        }
+
+        private static AutonomousDefenseLockState GetDefenseLockState(UnitLock defenseLock)
+        {
+            if (defenseLock == null)
+                return AutonomousDefenseLockState.Missing;
+            return defenseLock.State == LockState.Locked
+                ? AutonomousDefenseLockState.Locked
+                : AutonomousDefenseLockState.InProgress;
+        }
+
+        private UnitLock FindDefenseLock(Player player)
+        {
+            if (player == null || _defense == null || _defense.TargetEid <= 0)
+                return null;
+
+            return player.GetLocks()
+                .OfType<UnitLock>()
+                .FirstOrDefault(candidate => candidate.Target?.Eid == _defense.TargetEid);
+        }
+
         private bool HandleRobotRecovery(GameActionContext context, bool liveRobotDead)
         {
             AutonomousRobotRecoveryReason reason = AutonomousRobotRecoveryPolicy.Assess(
@@ -353,6 +518,9 @@ namespace Perpetuum.Services.Autonomous
             if (reason == AutonomousRobotRecoveryReason.None)
                 return false;
 
+            _damageMonitor.Reset();
+            _defense?.Reset();
+            _defenseLockOwned = false;
             _navigation.Stop(context);
             if (!_robotRecoveryRequired)
             {

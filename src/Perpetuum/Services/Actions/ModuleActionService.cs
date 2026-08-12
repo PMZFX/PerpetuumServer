@@ -76,6 +76,7 @@ namespace Perpetuum.Services.Actions
     {
         void Use(GameActionContext context, ModuleUseAction action);
         void UseByCategory(GameActionContext context, ModuleCategoryUseAction action);
+        void DeactivateByCategory(GameActionContext context, CategoryFlags categoryFlags);
         void LoadAmmo(GameActionContext context, ModuleAmmoLoadAction action);
         void UnloadAmmo(GameActionContext context, ModuleAmmoUnloadAction action);
     }
@@ -185,6 +186,22 @@ namespace Perpetuum.Services.Actions
                     player.Character,
                     ErrorCodes.ExtensionLevelMismatchTerrain);
                 module.State.LoadAmmo(action.AmmoDefinition);
+            });
+        }
+
+        public void DeactivateByCategory(GameActionContext context, CategoryFlags categoryFlags)
+        {
+            _audit.Execute(context, "moduleDeactivateByCategory", () =>
+            {
+                Player player = GetPlayer(context);
+                foreach (ActiveModule module in player.ActiveModules)
+                {
+                    if (!module.IsCategory(categoryFlags))
+                        continue;
+
+                    module.State.SwitchTo(ModuleStateType.Idle);
+                    module.Lock = null;
+                }
             });
         }
 
