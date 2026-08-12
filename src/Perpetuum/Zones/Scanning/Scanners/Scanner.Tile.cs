@@ -18,6 +18,7 @@ namespace Perpetuum.Zones.Scanning.Scanners
             var result = builder.Build();
 
             _module.LastScanResult = result;
+            _module.LastObservation = result;
 
             var mineralLayer = _zone.Terrain.GetMaterialLayer(ammo.MaterialType) as MineralLayer;
 

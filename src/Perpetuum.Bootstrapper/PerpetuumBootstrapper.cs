@@ -1612,6 +1612,7 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<MovementInputService>().As<IMovementInputService>().SingleInstance();
             _ = _builder.RegisterType<TargetLockActionService>().As<ITargetLockActionService>();
             _ = _builder.RegisterType<ModuleActionService>().As<IModuleActionService>();
+            _ = _builder.RegisterType<MineralScanObservationService>().As<IMineralScanObservationService>();
 
             _ = _builder.Register(c =>
             {
@@ -1631,6 +1632,10 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousPerceptionService>();
             _ = _builder.RegisterType<AutonomousDamageMonitor>()
                 .As<IAutonomousDamageMonitor>();
+            _ = _builder.RegisterType<AutonomousMiningEquipmentService>()
+                .As<IAutonomousMiningEquipmentService>();
+            _ = _builder.RegisterType<AutonomousCargoService>()
+                .As<IAutonomousCargoService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>

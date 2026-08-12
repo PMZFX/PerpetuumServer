@@ -1,7 +1,10 @@
-﻿using System.Drawing;
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using Perpetuum.EntityFramework;
 using Perpetuum.Zones.Scanning.Ammos;
+using Perpetuum.Zones.Scanning.Results;
 using Perpetuum.Zones.Terrains.Materials.Minerals;
 
 namespace Perpetuum.Zones.Scanning.Scanners
@@ -10,44 +13,36 @@ namespace Perpetuum.Zones.Scanning.Scanners
     {
         public void Visit(OneTileScannerAmmo ammo)
         {
-            var packet = BuildScanOneTileResultPacket(_player.CurrentPosition);
-            _player.Session.SendPacket(packet);
+            OneTileMineralScanObservation observation = BuildObservation(_player.CurrentPosition);
+            _module.LastObservation = observation;
+            _player.Session.SendPacket(observation.ToPacket());
 
             //do mission
             OnMineralScanned(MaterialProbeType.OneTile);
         }
 
-        private Packet BuildScanOneTileResultPacket(Point location)
+        private OneTileMineralScanObservation BuildObservation(Point location)
         {
-            var packet = new Packet(ZoneCommand.ScanOneTileResult);
-            packet.AppendLong(_module.Eid); //module EID
-            packet.AppendPoint(location);
+            var samples = new List<OneTileMineralSample>();
 
-            using (var bb = new BinaryStream())
+            foreach (var layer in _zone.Terrain.Materials.OfType<MineralLayer>())
             {
-                var count = 0;
+                if (!layer.TryGetNode(location, out MineralNode node))
+                    continue;
 
-                foreach (var layer in _zone.Terrain.Materials.OfType<MineralLayer>())
-                {
-                    if (!layer.TryGetNode(location, out MineralNode node))
-                        continue;
+                var amount = node.GetValue(location);
+                if (amount <= 0)
+                    continue;
 
-                    var amount = node.GetValue(location);
-                    if ( amount <= 0 )
-                        continue;
-
-                    var m = _materialHelper.GetMaterialInfo(layer.Type);
-                    var def = m.EntityDefault.Definition;
-                    bb.AppendInt(def);
-                    bb.AppendInt((int) amount);
-                    count++;
-                }
-
-                packet.AppendByte((byte) count);
-                packet.AppendStream(bb);
+                var material = _materialHelper.GetMaterialInfo(layer.Type);
+                samples.Add(new OneTileMineralSample(material.EntityDefault.Definition, (int)amount));
             }
 
-            return packet;
+            return new OneTileMineralScanObservation(
+                _module.Eid,
+                location,
+                samples,
+                DateTime.UtcNow);
         }
     }
 }

@@ -19,17 +19,17 @@ namespace Perpetuum.Containers
                 base.AcceptVisitor(visitor);
         }
 
-        private double FreeCapacity
+        public double FreeCapacity
         {
             get { return Capacity - Load; }
         }
 
-        private double Capacity
+        public double Capacity
         {
             get { return ED.Options.Capacity; }
         }
 
-        private double Load
+        public double Load
         {
             get
             {

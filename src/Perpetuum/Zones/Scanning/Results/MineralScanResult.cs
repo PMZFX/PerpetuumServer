@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using Perpetuum.Zones.Terrains.Materials;
 
 namespace Perpetuum.Zones.Scanning.Results
 {
-    public class MineralScanResult
+    public class MineralScanResult : IMineralScanObservation
     {
         public int Id { private get; set; }
-        public DateTime Creation { private get; set; }
+        public DateTime Creation { get; set; }
         public int ZoneId { get; set; }
         public MaterialType MaterialType { get; set; }
         public Area Area { get; set; }
@@ -20,13 +21,47 @@ namespace Perpetuum.Zones.Scanning.Results
 
         public long Quality { get; set; }
 
+        public MaterialProbeType ProbeType => MaterialProbeType.Tile;
+
         public MineralScanResult()
         {
         }
 
         public MineralScanResult(uint[] scanData)
         {
-            _scanData = scanData;
+            _scanData = scanData == null ? null : (uint[])scanData.Clone();
+        }
+
+        /// <summary>
+        /// Selects the strongest noisy sample in the exact grid sent to the
+        /// client. Ties use client packet order (top-to-bottom, left-to-right).
+        /// </summary>
+        public bool TryGetRichestLocation(out Point location, out uint amount)
+        {
+            location = Point.Empty;
+            amount = 0;
+
+            int expectedLength = Area.Width * Area.Height;
+            if (_scanData == null || _scanData.Length != expectedLength)
+                return false;
+
+            int richestOffset = -1;
+            for (int offset = 0; offset < _scanData.Length; offset++)
+            {
+                if (_scanData[offset] <= amount)
+                    continue;
+
+                amount = _scanData[offset];
+                richestOffset = offset;
+            }
+
+            if (richestOffset < 0)
+                return false;
+
+            location = new Point(
+                Area.X1 + richestOffset % Area.Width,
+                Area.Y1 + richestOffset / Area.Width);
+            return true;
         }
 
         public override string ToString()
