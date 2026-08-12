@@ -115,6 +115,21 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void ResupplyTransitReplaysEveryPriorCandidateInSurveyOrder()
+        {
+            var origin = new Position(100, 200);
+
+            Position[] transit = AutonomousMiningSurveyPolicy.RebuildCandidateTrail(origin, 49, 11);
+
+            Assert.Equal(49, transit.Length);
+            for (int index = 0; index < transit.Length; index++)
+                Assert.Equal(AutonomousMiningSurveyPolicy.GetSite(origin, index, 11), transit[index]);
+            for (int index = 1; index < transit.Length; index++)
+                Assert.True(transit[index - 1].TotalDistance2D(transit[index]) <=
+                            AutonomousMiningSurveyPolicy.GetMaximumLegDistance(11));
+        }
+
+        [Fact]
         public void DockingRecoveryRotatesThroughDifferentApproachDirections()
         {
             Assert.Equal(4, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 0, 0));

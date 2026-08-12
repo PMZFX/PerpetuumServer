@@ -292,6 +292,12 @@ stays within the navigator's safe planning range.
 Survey progress is retained across ordinary dock, probe resupply, and redeploy
 trips, so a fitted module with fewer charges than `MaxSurveySites` eventually
 continues into the outer rings instead of rescanning the inner ring forever.
+After redeploy, the miner consumes no probe at the terminal: it replays the
+deterministic prior candidate trail as outbound transit, with every waypoint
+subject to normal pathfinding and movement, and resumes scanning only at the
+persisted frontier. Positions actually reached during transit become the
+return breadcrumbs for that deployment. A restart during transit conservatively
+returns the actor to base before reconstructing the route on its next trip.
 Progress resets after a deposit observation or bounded survey exhaustion.
 Return trips first retrace the survey positions the actor actually reached, in
 reverse order, so difficult terrain is exited along demonstrated paths. If a
