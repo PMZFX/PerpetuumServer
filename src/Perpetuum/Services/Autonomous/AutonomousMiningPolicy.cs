@@ -78,6 +78,29 @@ namespace Perpetuum.Services.Autonomous
 
     public static class AutonomousMiningSurveyPolicy
     {
+        public static double GetMaximumLegDistance(int stepDistance)
+        {
+            if (stepDistance <= 0)
+                throw new ArgumentOutOfRangeException(nameof(stepDistance));
+            return stepDistance * Math.Sqrt(2);
+        }
+
+        public static Position[] RebuildCandidateTrail(
+            Position origin,
+            int nextSiteIndex,
+            int stepDistance)
+        {
+            if (nextSiteIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(nextSiteIndex));
+            if (stepDistance <= 0)
+                throw new ArgumentOutOfRangeException(nameof(stepDistance));
+
+            var trail = new Position[nextSiteIndex];
+            for (int siteIndex = 0; siteIndex < nextSiteIndex; siteIndex++)
+                trail[siteIndex] = GetSite(origin, siteIndex, stepDistance);
+            return trail;
+        }
+
         public static int SelectResumeSite(
             MaterialType configuredMaterial,
             int maxSites,

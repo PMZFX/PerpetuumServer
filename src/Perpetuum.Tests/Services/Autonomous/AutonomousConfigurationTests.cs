@@ -216,15 +216,18 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
-        public void MiningSurveyMustRemainWithinNavigationReturnRange()
+        public void WideMiningSurveyIsValidWhenEveryAdjacentLegIsNavigable()
         {
             var options = new AutonomousMiningOptions
             {
-                SurveyStepDistance = 18,
-                MaxSurveySites = 48
+                SurveyStepDistance = 24,
+                MaxSurveySites = 128
             };
 
-            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+            options.Validate(12);
+            Assert.True(
+                AutonomousMiningSurveyPolicy.GetMaximumLegDistance(options.SurveyStepDistance) <
+                AutonomousNavigationService.MaximumStartDistance);
         }
     }
 }

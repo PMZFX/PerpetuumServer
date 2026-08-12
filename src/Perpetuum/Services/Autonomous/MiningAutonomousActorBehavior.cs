@@ -163,6 +163,14 @@ namespace Perpetuum.Services.Autonomous
                 : context.Actor.CurrentDockingBaseEid;
             _origin = context.Actor.IsDocked ? null : persisted?.Origin;
             _target = context.Actor.IsDocked ? null : persisted?.Target;
+            if (_origin.HasValue && _surveySiteIndex > 0)
+            {
+                foreach (Position waypoint in AutonomousMiningSurveyPolicy.RebuildCandidateTrail(
+                             _origin.Value,
+                             _surveySiteIndex,
+                             options.SurveyStepDistance))
+                    _surveyBreadcrumbs.Add(waypoint);
+            }
             switch (resume)
             {
                 case AutonomousMiningResumeDirective.StartDocked:

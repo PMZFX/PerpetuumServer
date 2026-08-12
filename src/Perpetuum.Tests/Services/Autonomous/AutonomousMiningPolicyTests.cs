@@ -102,6 +102,19 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void RestartTrailReconstructsDeterministicSurveyCandidatesWithoutMineralData()
+        {
+            var origin = new Position(100, 200);
+
+            Position[] trail = AutonomousMiningSurveyPolicy.RebuildCandidateTrail(origin, 25, 11);
+
+            Assert.Equal(25, trail.Length);
+            Assert.Equal(AutonomousMiningSurveyPolicy.GetSite(origin, 0, 11), trail[0]);
+            Assert.Equal(AutonomousMiningSurveyPolicy.GetSite(origin, 24, 11), trail[24]);
+            Assert.Equal(11 * Math.Sqrt(2), AutonomousMiningSurveyPolicy.GetMaximumLegDistance(11), 8);
+        }
+
+        [Fact]
         public void DockingRecoveryRotatesThroughDifferentApproachDirections()
         {
             Assert.Equal(4, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 0, 0));
