@@ -154,4 +154,21 @@ namespace Perpetuum.Services.Autonomous
             return (ring, -ring + 1 + index);
         }
     }
+
+    public static class AutonomousDockingRecoveryPolicy
+    {
+        private const int DirectionCount = 16;
+        private const int AttemptStride = 5;
+
+        public static int GetDirectionIndex(int characterId, int attempt, int candidateIndex)
+        {
+            if (attempt < 0)
+                throw new ArgumentOutOfRangeException(nameof(attempt));
+            if (candidateIndex < 0 || candidateIndex >= DirectionCount)
+                throw new ArgumentOutOfRangeException(nameof(candidateIndex));
+
+            long characterOffset = Math.Abs((long)characterId) % DirectionCount;
+            return (int)((characterOffset + (long)attempt * AttemptStride + candidateIndex) % DirectionCount);
+        }
+    }
 }

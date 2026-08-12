@@ -71,6 +71,7 @@ namespace Perpetuum.Services.Autonomous
         private IMineralScanObservation _observationBeforeScan;
         private int _scanAttempts;
         private int _surveySiteIndex;
+        private int _baseRecoveryAttempt;
         private bool _robotRecoveryRequired;
         private bool _cargoHoldAudited;
         private bool _retreatingFromThreat;
@@ -131,6 +132,7 @@ namespace Perpetuum.Services.Autonomous
             _scanner = null;
             _observationBeforeScan = null;
             _scanAttempts = 0;
+            _baseRecoveryAttempt = 0;
             _miningElapsed = TimeSpan.Zero;
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
@@ -271,7 +273,7 @@ namespace Perpetuum.Services.Autonomous
                     break;
                 case MiningState.RouteRetry:
                     if (_stateElapsed >= RouteRetryDelay)
-                        BeginReturn(context, "route_retry");
+                        BeginBaseRecovery(context, player);
                     break;
             }
         }
@@ -288,6 +290,7 @@ namespace Perpetuum.Services.Autonomous
                 _origin = null;
                 _target = null;
                 _scanAttempts = 0;
+                _baseRecoveryAttempt = 0;
                 SetState(context, MiningState.Docked);
                 return;
             }
@@ -614,6 +617,7 @@ namespace Perpetuum.Services.Autonomous
 
         private void BeginReturn(GameActionContext context, string reason)
         {
+            _baseRecoveryAttempt = 0;
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player != null)
             {
@@ -646,7 +650,7 @@ namespace Perpetuum.Services.Autonomous
             else if (status == AutonomousNavigationStatus.Blocked || status == AutonomousNavigationStatus.Stuck)
             {
                 _navigation.Stop(context);
-                SetState(context, MiningState.RouteRetry);
+                BeginBaseRecovery(context, context.Actor.GetPlayerRobotFromZone());
             }
         }
 
@@ -667,18 +671,23 @@ namespace Perpetuum.Services.Autonomous
 
             int minimum = dockingBase.Size + 1;
             int maximum = Math.Max(minimum, dockingBase.Size + dockingBase.SpawnRange);
-            int offset = Math.Abs(context.Actor.Id) % 16;
+            int recoveryAttempt = _baseRecoveryAttempt++;
             for (int radius = minimum; radius <= maximum; radius += 2)
             {
                 for (int index = 0; index < 16; index++)
                 {
-                    double direction = ((index + offset) % 16) / 16.0;
+                    int directionIndex = AutonomousDockingRecoveryPolicy.GetDirectionIndex(
+                        context.Actor.Id,
+                        recoveryAttempt,
+                        index);
+                    double direction = directionIndex / 16.0;
                     Position candidate = dockingBase.CurrentPosition.OffsetInDirection(direction, radius).Center;
                     if (!_navigation.TryStart(context, candidate, _definition.Mining.Throttle))
                         continue;
                     _origin = candidate;
                     SetState(context, MiningState.Returning);
-                    _audit.Write(context.Actor.Id, "mining_base_recovery", AutonomousActorStatus.Active);
+                    _audit.Write(context.Actor.Id, "mining_base_recovery", AutonomousActorStatus.Active,
+                        $"attempt_{recoveryAttempt + 1}_direction_{directionIndex}");
                     return;
                 }
             }

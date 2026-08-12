@@ -101,6 +101,17 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(0, AutonomousMiningSurveyPolicy.SelectResumeSite(MaterialType.Titan, 17, state));
         }
 
+        [Fact]
+        public void DockingRecoveryRotatesThroughDifferentApproachDirections()
+        {
+            Assert.Equal(4, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 0, 0));
+            Assert.Equal(9, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 1, 0));
+            Assert.Equal(14, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 2, 0));
+            Assert.Equal(3, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 3, 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, -1, 0));
+        }
+
         private static AutonomousWorkState State(string phase, Position? target, int surveySiteIndex = 0)
         {
             return new AutonomousWorkState(

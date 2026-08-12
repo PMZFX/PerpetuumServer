@@ -288,6 +288,9 @@ Survey progress is retained across ordinary dock, probe resupply, and redeploy
 trips, so a fitted module with fewer charges than `MaxSurveySites` eventually
 continues into the outer rings instead of rescanning the inner ring forever.
 Progress resets after a deposit observation or bounded survey exhaustion.
+If a direct route home remains physically stuck after the follower's internal
+replans, recovery rotates through deterministic docking-range approach points
+instead of retrying the identical path indefinitely.
 
 Mining progress requires `dbo.ai_actor_work_state`, created by
 `database/overlays/002_ai_actor_work_state.sql`. Each transition records the
