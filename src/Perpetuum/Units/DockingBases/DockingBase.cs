@@ -86,7 +86,7 @@ namespace Perpetuum.Units.DockingBases
 
         public int Size => ED.Options.Size;
 
-        private int DockingRange => ED.Options.DockingRange;
+        public int DockingRange => ED.Options.DockingRange;
 
         public bool IsInDockingRange(Player player)
         {

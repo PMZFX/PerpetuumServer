@@ -54,6 +54,23 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Empty(AutonomousTeleportRoutePolicy.FindRoute(1, 1, links));
         }
 
+        [Fact]
+        public void ZoneZeroIsAValidWorldEndpoint()
+        {
+            var outbound = AutonomousTeleportRoutePolicy.FindRoute(0, 6, new[]
+            {
+                Link(1, 0, 4),
+                Link(2, 4, 6)
+            });
+            var inbound = AutonomousTeleportRoutePolicy.FindRoute(6, 0, new[]
+            {
+                Link(3, 6, 0)
+            });
+
+            Assert.Equal(new[] {1, 2}, outbound.Select(link => link.DescriptionId));
+            Assert.Equal(new[] {3}, inbound.Select(link => link.DescriptionId));
+        }
+
         private static AutonomousTeleportLink Link(
             int id,
             int sourceZone,

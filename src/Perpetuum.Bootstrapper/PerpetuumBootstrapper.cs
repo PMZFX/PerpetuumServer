@@ -1646,8 +1646,13 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<DatabaseAutonomousMarketMemoryStore>()
                 .As<IAutonomousMarketMemoryStore>()
                 .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousTradeStateStore>()
+                .As<IAutonomousTradeStateStore>()
+                .SingleInstance();
             _ = _builder.RegisterType<AutonomousRegionalMarketService>()
                 .As<IAutonomousRegionalMarketService>();
+            _ = _builder.RegisterType<AutonomousTradeExecutionService>()
+                .As<IAutonomousTradeExecutionService>();
             _ = _builder.RegisterType<AutonomousCargoDispositionService>()
                 .As<IAutonomousCargoDispositionService>();
             _ = _builder.RegisterType<AutonomousMiningProcurementService>()
@@ -1656,12 +1661,16 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousTeleportNetworkService>();
             _ = _builder.RegisterType<AutonomousWorldTravelService>()
                 .As<IAutonomousWorldTravelService>();
+            _ = _builder.RegisterType<AutonomousDestinationTravelService>()
+                .As<IAutonomousDestinationTravelService>();
             _ = _builder.RegisterType<AutonomousMiningResupplyService>()
                 .As<IAutonomousMiningResupplyService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.RegisterType<MiningAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("mining");
+            _ = _builder.RegisterType<TraderAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("trader");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();

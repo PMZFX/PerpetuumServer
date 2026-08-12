@@ -45,9 +45,9 @@ namespace Perpetuum.Services.Autonomous
         public bool IsUsableForWorldRoute =>
             DescriptionId > 0 &&
             SourceTeleportEid > 0 &&
-            SourceZoneId > 0 &&
+            SourceZoneId >= 0 &&
             SourceRange > 0 &&
-            TargetZoneId > 0 &&
+            TargetZoneId >= 0 &&
             SourceZoneId != TargetZoneId &&
             Type == TeleportDescriptionType.AnotherZone &&
             Active &&
@@ -104,9 +104,9 @@ namespace Perpetuum.Services.Autonomous
             int targetZoneId,
             IEnumerable<AutonomousTeleportLink> links)
         {
-            if (sourceZoneId <= 0)
+            if (sourceZoneId < 0)
                 throw new ArgumentOutOfRangeException(nameof(sourceZoneId));
-            if (targetZoneId <= 0)
+            if (targetZoneId < 0)
                 throw new ArgumentOutOfRangeException(nameof(targetZoneId));
             if (links == null)
                 throw new ArgumentNullException(nameof(links));

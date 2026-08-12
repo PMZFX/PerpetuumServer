@@ -34,7 +34,9 @@ namespace Perpetuum.Tests.Services.Autonomous
                 destination,
                 AutonomousWorldTravelLegPolicy.GetCandidate(current, destination, 36, 0));
 
-            Position[] detours = Enumerable.Range(1, 8)
+            Position[] detours = Enumerable.Range(
+                    1,
+                    AutonomousWorldTravelLegPolicy.CandidateCount - 1)
                 .Select(attempt => AutonomousWorldTravelLegPolicy.GetCandidate(
                     current,
                     destination,
@@ -42,8 +44,54 @@ namespace Perpetuum.Tests.Services.Autonomous
                     attempt))
                 .ToArray();
             Assert.All(detours, candidate =>
-                Assert.InRange(current.TotalDistance2D(candidate), 5.9, 36.1));
-            Assert.Equal(8, detours.Distinct().Count());
+                Assert.InRange(current.TotalDistance2D(candidate), 4.9, 36.1));
+            Assert.Equal(
+                AutonomousWorldTravelLegPolicy.CandidateCount - 1,
+                detours.Distinct().Count());
+        }
+
+        [Fact]
+        public void ExhaustiveDetoursCoverTheRearHalfCircle()
+        {
+            var current = new Position(100, 100);
+            var destination = new Position(300, 100);
+
+            Position finalCandidate = AutonomousWorldTravelLegPolicy.GetCandidate(
+                current,
+                destination,
+                36,
+                AutonomousWorldTravelLegPolicy.CandidateCount - 1);
+
+            Assert.Equal(48, AutonomousWorldTravelLegPolicy.CandidateCount);
+            Assert.True(
+                finalCandidate.TotalDistance2D(destination) > current.TotalDistance2D(destination));
+        }
+
+        [Fact]
+        public void ExhaustiveDetoursTryShorterRingsAfterEveryDirection()
+        {
+            var current = new Position(100, 100);
+            var destination = new Position(300, 100);
+
+            Position longCandidate = AutonomousWorldTravelLegPolicy.GetCandidate(
+                current,
+                destination,
+                36,
+                0);
+            Position mediumCandidate = AutonomousWorldTravelLegPolicy.GetCandidate(
+                current,
+                destination,
+                36,
+                16);
+            Position shortCandidate = AutonomousWorldTravelLegPolicy.GetCandidate(
+                current,
+                destination,
+                36,
+                32);
+
+            Assert.InRange(current.TotalDistance2D(longCandidate), 35.9, 36.1);
+            Assert.InRange(current.TotalDistance2D(mediumCandidate), 23.9, 24.1);
+            Assert.InRange(current.TotalDistance2D(shortCandidate), 11.9, 12.1);
         }
 
         [Fact]
