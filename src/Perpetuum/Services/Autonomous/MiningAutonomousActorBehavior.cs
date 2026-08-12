@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using Perpetuum.ExportedTypes;
@@ -57,6 +58,8 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousActorStateStore _actorStateStore;
         private readonly IAutonomousWorkStateStore _workStateStore;
         private readonly IAutonomousActorAudit _audit;
+        private readonly List<Position> _surveyBreadcrumbs = new List<Position>();
+        private readonly Queue<Position> _returnWaypoints = new Queue<Position>();
         private AutonomousRobotRecoveryTracker _recovery;
         private MaterialType _material;
         private MiningState _state;
@@ -133,6 +136,8 @@ namespace Perpetuum.Services.Autonomous
             _observationBeforeScan = null;
             _scanAttempts = 0;
             _baseRecoveryAttempt = 0;
+            _surveyBreadcrumbs.Clear();
+            _returnWaypoints.Clear();
             _miningElapsed = TimeSpan.Zero;
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
@@ -235,6 +240,8 @@ namespace Perpetuum.Services.Autonomous
                 case MiningState.WaitingForWorld:
                     _origin = player.CurrentPosition;
                     _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
+                    _surveyBreadcrumbs.Clear();
+                    _returnWaypoints.Clear();
                     BeginScan(context);
                     break;
                 case MiningState.ResumingTarget:
@@ -291,6 +298,8 @@ namespace Perpetuum.Services.Autonomous
                 _target = null;
                 _scanAttempts = 0;
                 _baseRecoveryAttempt = 0;
+                _surveyBreadcrumbs.Clear();
+                _returnWaypoints.Clear();
                 SetState(context, MiningState.Docked);
                 return;
             }
@@ -525,6 +534,9 @@ namespace Perpetuum.Services.Autonomous
             {
                 _navigation.Stop(context);
                 _scanAttempts = 0;
+                Player player = context.Actor.GetPlayerRobotFromZone();
+                if (player != null)
+                    _surveyBreadcrumbs.Add(player.CurrentPosition);
                 _audit.Write(context.Actor.Id, "mining_survey_arrived", AutonomousActorStatus.Active,
                     $"site_{_surveySiteIndex}");
                 BeginScan(context);
@@ -628,7 +640,15 @@ namespace Perpetuum.Services.Autonomous
             }
             _drillActive = false;
             _ownedTerrainLockId = 0;
-            if (!_origin.HasValue || !_navigation.TryStart(context, _origin.Value, _definition.Mining.Throttle))
+            _returnWaypoints.Clear();
+            if (_origin.HasValue)
+            {
+                foreach (Position waypoint in AutonomousMiningReturnRoutePolicy.Build(
+                             _origin.Value,
+                             _surveyBreadcrumbs))
+                    _returnWaypoints.Enqueue(waypoint);
+            }
+            if (!_origin.HasValue || !TryStartNextReturnWaypoint(context))
             {
                 SetState(context, MiningState.RecoveringWorld);
                 BeginBaseRecovery(context, player);
@@ -644,6 +664,20 @@ namespace Perpetuum.Services.Autonomous
             AutonomousNavigationStatus status = _navigation.Update(context, elapsed);
             if (status == AutonomousNavigationStatus.Arrived)
             {
+                if (_returnWaypoints.Count > 0)
+                    _returnWaypoints.Dequeue();
+                if (_returnWaypoints.Count > 0)
+                {
+                    if (TryStartNextReturnWaypoint(context))
+                    {
+                        SetState(context, MiningState.Returning);
+                        _audit.Write(context.Actor.Id, "mining_return_waypoint", AutonomousActorStatus.Active,
+                            $"remaining_{_returnWaypoints.Count}");
+                        return;
+                    }
+                    BeginBaseRecovery(context, context.Actor.GetPlayerRobotFromZone());
+                    return;
+                }
                 SetState(context, MiningState.WaitingToDock);
                 _audit.Write(context.Actor.Id, "mining_returned", AutonomousActorStatus.Active);
             }
@@ -656,6 +690,7 @@ namespace Perpetuum.Services.Autonomous
 
         private void BeginBaseRecovery(GameActionContext context, Player player)
         {
+            _returnWaypoints.Clear();
             var dockingBase = context.Actor.GetCurrentDockingBase();
             if (player == null || dockingBase == null || dockingBase.Zone != player.Zone)
             {
@@ -672,19 +707,41 @@ namespace Perpetuum.Services.Autonomous
             int minimum = dockingBase.Size + 1;
             int maximum = Math.Max(minimum, dockingBase.Size + dockingBase.SpawnRange);
             int recoveryAttempt = _baseRecoveryAttempt++;
-            for (int radius = minimum; radius <= maximum; radius += 2)
+            int preferredDirectionIndex = (int)Math.Round(
+                dockingBase.CurrentPosition.DirectionTo(player.CurrentPosition) * 16) % 16;
+            int escapeDirectionIndex = AutonomousDockingRecoveryPolicy.GetDirectionIndex(
+                preferredDirectionIndex,
+                recoveryAttempt,
+                0);
+            Position escape = player.CurrentPosition.OffsetInDirection(
+                escapeDirectionIndex / 16.0,
+                4).Center;
+            Position escapeApproach = dockingBase.CurrentPosition.OffsetInDirection(
+                escapeDirectionIndex / 16.0,
+                maximum).Center;
+            if (_navigation.TryStart(context, escape, _definition.Mining.Throttle))
+            {
+                _returnWaypoints.Clear();
+                _returnWaypoints.Enqueue(escape);
+                _returnWaypoints.Enqueue(escapeApproach);
+                SetState(context, MiningState.Returning);
+                _audit.Write(context.Actor.Id, "mining_escape_recovery", AutonomousActorStatus.Active,
+                    $"attempt_{recoveryAttempt + 1}_direction_{escapeDirectionIndex}");
+                return;
+            }
+
+            for (int radius = maximum; radius >= minimum; radius -= 2)
             {
                 for (int index = 0; index < 16; index++)
                 {
                     int directionIndex = AutonomousDockingRecoveryPolicy.GetDirectionIndex(
-                        context.Actor.Id,
+                        preferredDirectionIndex,
                         recoveryAttempt,
                         index);
                     double direction = directionIndex / 16.0;
                     Position candidate = dockingBase.CurrentPosition.OffsetInDirection(direction, radius).Center;
                     if (!_navigation.TryStart(context, candidate, _definition.Mining.Throttle))
                         continue;
-                    _origin = candidate;
                     SetState(context, MiningState.Returning);
                     _audit.Write(context.Actor.Id, "mining_base_recovery", AutonomousActorStatus.Active,
                         $"attempt_{recoveryAttempt + 1}_direction_{directionIndex}");
@@ -692,6 +749,21 @@ namespace Perpetuum.Services.Autonomous
                 }
             }
             SetState(context, MiningState.RouteRetry);
+        }
+
+        private bool TryStartNextReturnWaypoint(GameActionContext context)
+        {
+            while (_returnWaypoints.Count > 0)
+            {
+                if (_navigation.TryStart(
+                        context,
+                        _returnWaypoints.Peek(),
+                        _definition.Mining.Throttle))
+                    return true;
+                _returnWaypoints.Dequeue();
+            }
+
+            return false;
         }
 
         private void TryDock(GameActionContext context, Player player)

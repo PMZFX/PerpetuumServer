@@ -110,6 +110,24 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(3, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 3, 0));
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, -1, 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AutonomousDockingRecoveryPolicy.GetDirectionIndex(16, 0, 0));
+        }
+
+        [Fact]
+        public void MiningReturnRouteRetracesObservedSurveyPositionsBeforeOrigin()
+        {
+            var origin = new Position(10, 10);
+            var traversed = new[]
+            {
+                new Position(11, 10),
+                new Position(11, 11),
+                new Position(10, 11)
+            };
+
+            Assert.Equal(
+                new[] { traversed[2], traversed[1], traversed[0], origin },
+                AutonomousMiningReturnRoutePolicy.Build(origin, traversed));
         }
 
         private static AutonomousWorkState State(string phase, Position? target, int surveySiteIndex = 0)
