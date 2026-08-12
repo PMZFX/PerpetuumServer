@@ -56,11 +56,7 @@ namespace Perpetuum.IO
         {
             var src = CreatePath(sourcePath);
             var dest = CreatePath(targetPath);
-
-            if (File.Exists(dest))
-                File.Delete(dest);
-
-            File.Move(src,dest);
+            File.Move(src, dest, true);
         }
 
         public void CreateDirectory(string path)
