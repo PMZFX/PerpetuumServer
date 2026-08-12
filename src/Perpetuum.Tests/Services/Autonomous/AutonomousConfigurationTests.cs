@@ -201,6 +201,26 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => options.Validate(12));
         }
 
+        [Fact]
+        public void MarketProcurementRequiresPriceCapAndReserve()
+        {
+            var options = new AutonomousMiningOptions
+            {
+                Resupply = new AutonomousMiningResupplyOptions
+                {
+                    BuyFromMarket = true,
+                    MaximumUnitPrice = 0
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+
+            options.Resupply.MaximumUnitPrice = 100;
+            options.Resupply.TileProbeReserve = 0;
+            options.Resupply.MiningChargeReserve = 0;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
+
         [Theory]
         [InlineData(1, 48)]
         [InlineData(18, 129)]

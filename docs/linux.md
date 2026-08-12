@@ -251,6 +251,11 @@ for the configured material.
     "Resupply": {
       "Enabled": true,
       "ReloadBelowRatio": 0.5,
+      "BuyFromMarket": false,
+      "TileProbeReserve": 64,
+      "MiningChargeReserve": 500,
+      "MaximumPurchaseQuantity": 500,
+      "MaximumUnitPrice": 0.0,
       "RetrySeconds": 60
     },
     "Market": {
@@ -333,7 +338,23 @@ time through the same docked `equipAmmo` action used by the client. A module is
 eligible below `ReloadBelowRatio`; a different or empty load is also eligible.
 If no fitted tile scanner and drill have usable charges after resupply, the
 miner stays docked, emits `mining_equipment_ready_required`, and checks again
-after `RetrySeconds`. It does not create, buy, or silently refill ammunition.
+after `RetrySeconds`. It never creates or silently refills ammunition.
+
+`BuyFromMarket` optionally extends resupply through the normal local
+`marketBuy` and `relocateItems` actions. The miner recognizes definitions only
+from compatible ammunition already loaded or present in its own terminal and
+robot containers. It buys the lowest eligible local sell order up to the
+configured per-type reserve, finite offer quantity, `MaximumPurchaseQuantity`,
+and `MaximumUnitPrice`, using its personal wallet. The price cap is checked
+again while the selected order is locked for purchase, so a changed offer
+cannot bypass it. The purchase first lands in the actor's public terminal
+container and is then moved into robot cargo, just as it is for a player.
+Market access, corporation restrictions, available credit, order quantity,
+container capacity, and all transaction logging remain authoritative. With
+buying disabled—the compatibility default—resupply remains cargo-only.
+An interrupted purchase can resume by moving its matching terminal stack on a
+later tick, but only when the complete stack still fits under the configured
+cargo reserve; an oversized stack remains in terminal storage.
 
 Stop with enough time for zone-layer persistence:
 

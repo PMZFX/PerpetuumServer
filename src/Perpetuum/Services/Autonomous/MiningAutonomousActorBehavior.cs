@@ -51,6 +51,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousMiningEquipmentService _equipment;
         private readonly IAutonomousCargoService _cargo;
         private readonly IAutonomousCargoDispositionService _cargoDisposition;
+        private readonly IAutonomousMiningProcurementService _procurement;
         private readonly IAutonomousMiningResupplyService _resupply;
         private readonly IMineralScanObservationService _scanObservations;
         private readonly ITargetLockActionService _targetLocks;
@@ -80,6 +81,7 @@ namespace Perpetuum.Services.Autonomous
         private bool _retreatingFromThreat;
         private bool _drillActive;
         private TimeSpan _marketRetryRemaining;
+        private TimeSpan _procurementRetryRemaining;
         private TimeSpan _resupplyRetryRemaining;
         private bool _equipmentHoldAudited;
 
@@ -92,6 +94,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousMiningEquipmentService equipment,
             IAutonomousCargoService cargo,
             IAutonomousCargoDispositionService cargoDisposition,
+            IAutonomousMiningProcurementService procurement,
             IAutonomousMiningResupplyService resupply,
             IMineralScanObservationService scanObservations,
             ITargetLockActionService targetLocks,
@@ -108,6 +111,7 @@ namespace Perpetuum.Services.Autonomous
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _cargo = cargo ?? throw new ArgumentNullException(nameof(cargo));
             _cargoDisposition = cargoDisposition ?? throw new ArgumentNullException(nameof(cargoDisposition));
+            _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _resupply = resupply ?? throw new ArgumentNullException(nameof(resupply));
             _scanObservations = scanObservations ?? throw new ArgumentNullException(nameof(scanObservations));
             _targetLocks = targetLocks ?? throw new ArgumentNullException(nameof(targetLocks));
@@ -143,6 +147,7 @@ namespace Perpetuum.Services.Autonomous
             _retreatingFromThreat = false;
             _drillActive = false;
             _marketRetryRemaining = TimeSpan.Zero;
+            _procurementRetryRemaining = TimeSpan.Zero;
             _resupplyRetryRemaining = TimeSpan.Zero;
             _equipmentHoldAudited = false;
 
@@ -346,6 +351,40 @@ namespace Perpetuum.Services.Autonomous
             {
                 _resupplyRetryRemaining -= elapsed;
                 return;
+            }
+
+            if (_procurementRetryRemaining > TimeSpan.Zero)
+            {
+                _procurementRetryRemaining -= elapsed;
+            }
+            else
+            {
+                try
+                {
+                    AutonomousMiningProcurement procurement = _procurement.StockNext(
+                        context,
+                        _material,
+                        _definition.Mining.Resupply);
+                    if (procurement.Result == AutonomousMiningProcurementResult.Purchased ||
+                        procurement.Result == AutonomousMiningProcurementResult.Transferred)
+                    {
+                        _audit.Write(context.Actor.Id,
+                            procurement.Result == AutonomousMiningProcurementResult.Purchased
+                                ? "mining_supply_purchased"
+                                : "mining_supply_transferred",
+                            AutonomousActorStatus.Active,
+                            $"definition_{procurement.Definition}_quantity_{procurement.Quantity}_unit_price_{procurement.UnitPrice}");
+                        return;
+                    }
+                    if (procurement.Result == AutonomousMiningProcurementResult.NoEligibleOffer)
+                        _procurementRetryRemaining = TimeSpan.FromSeconds(_definition.Mining.Resupply.RetrySeconds);
+                }
+                catch (PerpetuumException exception)
+                {
+                    _procurementRetryRemaining = TimeSpan.FromSeconds(_definition.Mining.Resupply.RetrySeconds);
+                    _audit.Write(context.Actor.Id, "mining_supply_purchase_blocked", AutonomousActorStatus.Active,
+                        exception.error.ToString());
+                }
             }
 
             try
