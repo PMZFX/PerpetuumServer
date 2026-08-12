@@ -554,15 +554,7 @@ namespace Perpetuum.Services.Autonomous
                     return;
                 }
 
-                _scanAttempts = 0;
-                if (_surveyTransitReachedRoute.Count > 0)
-                {
-                    _surveyRoute.Clear();
-                    _surveyRoute.AddRange(_surveyTransitReachedRoute);
-                }
-                _audit.Write(context.Actor.Id, "mining_survey_frontier_reached", AutonomousActorStatus.Active,
-                    $"site_{_surveySiteIndex}");
-                BeginSurvey(context);
+                CompleteSurveyTransit(context);
             }
             else if (status == AutonomousNavigationStatus.Blocked ||
                      status == AutonomousNavigationStatus.Stuck)
@@ -574,8 +566,32 @@ namespace Perpetuum.Services.Autonomous
                     SetState(context, MiningState.TravellingToSurveyFrontier);
                     return;
                 }
+
+                // A prior survey may legitimately have skipped its final candidate
+                // after terrain-aware navigation rejected it. Replaying every
+                // physically reachable predecessor is enough to restore that
+                // frontier; the normal survey loop will apply the same rules to
+                // the next candidate instead of forcing another resupply cycle.
+                if (_surveyTransitReachedRoute.Count > 0)
+                {
+                    CompleteSurveyTransit(context);
+                    return;
+                }
                 BeginReturn(context, "survey_frontier_blocked");
             }
+        }
+
+        private void CompleteSurveyTransit(GameActionContext context)
+        {
+            _scanAttempts = 0;
+            if (_surveyTransitReachedRoute.Count > 0)
+            {
+                _surveyRoute.Clear();
+                _surveyRoute.AddRange(_surveyTransitReachedRoute);
+            }
+            _audit.Write(context.Actor.Id, "mining_survey_frontier_reached", AutonomousActorStatus.Active,
+                $"site_{_surveySiteIndex}");
+            BeginSurvey(context);
         }
 
         private void BeginScan(GameActionContext context)
