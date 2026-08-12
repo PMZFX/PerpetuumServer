@@ -167,6 +167,11 @@ Configured dock dwell is a minimum: the actor also waits for the character's
 authoritative next-undock time, so a short dwell cannot bypass or repeatedly
 fail against the normal post-dock cooldown.
 
+Layer persistence writes and verifies a same-directory temporary file, then
+overwrites the prior layer with one filesystem move. It does not delete the
+prior layer first, avoiding a missing-layer window if container shutdown is
+interrupted between those operations.
+
 Patrol perception projects the real player's existing visible-unit set; it
 does not enumerate the zone. This is the same set that drives client unit
 enter/exit packets, so detection, stealth, gang visibility, and GM-stealth
