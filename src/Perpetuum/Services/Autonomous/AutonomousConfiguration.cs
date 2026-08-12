@@ -108,6 +108,8 @@ namespace Perpetuum.Services.Autonomous
 
         public AutonomousMarketOptions Market { get; set; } = new AutonomousMarketOptions();
 
+        public AutonomousMiningResupplyOptions Resupply { get; set; } = new AutonomousMiningResupplyOptions();
+
         public MaterialType GetMaterialType()
         {
             return Enum.TryParse(Material, true, out MaterialType materialType)
@@ -140,6 +142,30 @@ namespace Perpetuum.Services.Autonomous
             if (Market == null)
                 throw new InvalidOperationException($"Autonomous mining market options for character {characterId} cannot be null.");
             Market.Validate(characterId);
+            if (Resupply == null)
+                throw new InvalidOperationException($"Autonomous mining resupply options for character {characterId} cannot be null.");
+            Resupply.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousMiningResupplyOptions
+    {
+        [DefaultValue(true), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; } = true;
+
+        [DefaultValue(0.5), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double ReloadBelowRatio { get; set; } = 0.5;
+
+        [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RetrySeconds { get; set; } = 60;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(ReloadBelowRatio) || double.IsInfinity(ReloadBelowRatio) ||
+                ReloadBelowRatio <= 0 || ReloadBelowRatio > 1.0)
+                throw new InvalidOperationException($"Autonomous mining reload ratio for character {characterId} must be greater than zero and at most 1.0.");
+            if (RetrySeconds < 5 || RetrySeconds > 3600)
+                throw new InvalidOperationException($"Autonomous mining resupply retry for character {characterId} must be between 5 and 3600 seconds.");
         }
     }
 

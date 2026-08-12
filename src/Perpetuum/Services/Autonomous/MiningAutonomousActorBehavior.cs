@@ -49,6 +49,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousMiningEquipmentService _equipment;
         private readonly IAutonomousCargoService _cargo;
         private readonly IAutonomousCargoDispositionService _cargoDisposition;
+        private readonly IAutonomousMiningResupplyService _resupply;
         private readonly IMineralScanObservationService _scanObservations;
         private readonly ITargetLockActionService _targetLocks;
         private readonly IModuleActionService _modules;
@@ -73,6 +74,8 @@ namespace Perpetuum.Services.Autonomous
         private bool _retreatingFromThreat;
         private bool _drillActive;
         private TimeSpan _marketRetryRemaining;
+        private TimeSpan _resupplyRetryRemaining;
+        private bool _equipmentHoldAudited;
 
         public MiningAutonomousActorBehavior(
             AutonomousActorDefinition definition,
@@ -83,6 +86,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousMiningEquipmentService equipment,
             IAutonomousCargoService cargo,
             IAutonomousCargoDispositionService cargoDisposition,
+            IAutonomousMiningResupplyService resupply,
             IMineralScanObservationService scanObservations,
             ITargetLockActionService targetLocks,
             IModuleActionService modules,
@@ -98,6 +102,7 @@ namespace Perpetuum.Services.Autonomous
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _cargo = cargo ?? throw new ArgumentNullException(nameof(cargo));
             _cargoDisposition = cargoDisposition ?? throw new ArgumentNullException(nameof(cargoDisposition));
+            _resupply = resupply ?? throw new ArgumentNullException(nameof(resupply));
             _scanObservations = scanObservations ?? throw new ArgumentNullException(nameof(scanObservations));
             _targetLocks = targetLocks ?? throw new ArgumentNullException(nameof(targetLocks));
             _modules = modules ?? throw new ArgumentNullException(nameof(modules));
@@ -129,6 +134,8 @@ namespace Perpetuum.Services.Autonomous
             _retreatingFromThreat = false;
             _drillActive = false;
             _marketRetryRemaining = TimeSpan.Zero;
+            _resupplyRetryRemaining = TimeSpan.Zero;
+            _equipmentHoldAudited = false;
 
             AutonomousWorkState persisted = _workStateStore.Load(context.Actor.Id);
             AutonomousMiningResumeDirective resume = AutonomousMiningResumePolicy.Select(
@@ -306,6 +313,49 @@ namespace Perpetuum.Services.Autonomous
                 }
             }
 
+            if (_resupplyRetryRemaining > TimeSpan.Zero)
+            {
+                _resupplyRetryRemaining -= elapsed;
+                return;
+            }
+
+            try
+            {
+                AutonomousMiningResupply resupply = _resupply.ReloadNext(
+                    context,
+                    _material,
+                    _definition.Mining.Resupply);
+                if (resupply.Result == AutonomousMiningResupplyResult.Reloaded)
+                {
+                    _equipmentHoldAudited = false;
+                    _audit.Write(context.Actor.Id, "mining_resupplied", AutonomousActorStatus.Active,
+                        $"module_{resupply.ModuleEid}_ammo_{resupply.AmmoDefinition}");
+                    return;
+                }
+            }
+            catch (PerpetuumException exception)
+            {
+                _resupplyRetryRemaining = TimeSpan.FromSeconds(_definition.Mining.Resupply.RetrySeconds);
+                _audit.Write(context.Actor.Id, "mining_resupply_blocked", AutonomousActorStatus.Active,
+                    exception.error.ToString());
+                return;
+            }
+
+            AutonomousMiningEquipmentSnapshot equipment = _equipment.Observe(context);
+            if (equipment.SelectScanner(_material, MaterialProbeType.Tile) == null ||
+                equipment.SelectDrill(_material) == null)
+            {
+                if (!_equipmentHoldAudited)
+                {
+                    _equipmentHoldAudited = true;
+                    _audit.Write(context.Actor.Id, "mining_equipment_ready_required", AutonomousActorStatus.Active,
+                        $"material_{_material}");
+                }
+                _resupplyRetryRemaining = TimeSpan.FromSeconds(_definition.Mining.Resupply.RetrySeconds);
+                return;
+            }
+            _equipmentHoldAudited = false;
+
             AutonomousCargoSnapshot cargo = _cargo.Observe(context);
             if (cargo.FillRatio >= _definition.Mining.CargoFillRatio)
             {
@@ -328,6 +378,7 @@ namespace Perpetuum.Services.Autonomous
                 return;
 
             _cargoHoldAudited = false;
+            _equipmentHoldAudited = false;
             _retreatingFromThreat = false;
             _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
             _undock.Execute(context);

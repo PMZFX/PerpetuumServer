@@ -100,13 +100,13 @@ namespace Perpetuum.Services.Autonomous
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
 
-            var player = context.Actor.GetPlayerRobotFromZone()
-                .ThrowIfNull(ErrorCodes.PlayerNotFound);
-            var scanners = player.ActiveModules
+            Robot robot = context.Actor.GetPlayerRobotFromZone() ?? context.Actor.GetActiveRobot();
+            robot = robot.ThrowIfNull(ErrorCodes.ARobotMustBeSelected);
+            var scanners = robot.ActiveModules
                 .OfType<GeoScannerModule>()
                 .Select(CreateScannerSnapshot)
                 .ToArray();
-            var drills = player.ActiveModules
+            var drills = robot.ActiveModules
                 .OfType<DrillerModule>()
                 .Select(CreateDrillSnapshot)
                 .ToArray();

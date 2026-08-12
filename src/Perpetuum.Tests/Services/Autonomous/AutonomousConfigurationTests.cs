@@ -187,5 +187,18 @@ namespace Perpetuum.Tests.Services.Autonomous
             options.Market.OrderDurationHours = 0;
             Assert.Throws<InvalidOperationException>(() => options.Validate(12));
         }
+
+        [Theory]
+        [InlineData(0.0)]
+        [InlineData(1.01)]
+        public void InvalidMiningResupplyThresholdIsRejected(double threshold)
+        {
+            var options = new AutonomousMiningOptions
+            {
+                Resupply = new AutonomousMiningResupplyOptions { ReloadBelowRatio = threshold }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
     }
 }
