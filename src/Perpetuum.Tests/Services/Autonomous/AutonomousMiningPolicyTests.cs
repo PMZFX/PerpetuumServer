@@ -69,14 +69,17 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
-        public void SurveySitesFormTwoDeterministicRingsWithoutHiddenWorldData()
+        public void SurveySitesFormThreeContiguousDeterministicRingsWithoutHiddenWorldData()
         {
             var origin = new Position(100, 200);
 
-            Assert.Equal(new Position(118, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 0, 18));
-            Assert.Equal(new Position(118, 182), AutonomousMiningSurveyPolicy.GetSite(origin, 7, 18));
-            Assert.Equal(new Position(136, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 8, 18));
-            Assert.Equal(new Position(136, 164), AutonomousMiningSurveyPolicy.GetSite(origin, 15, 18));
+            Assert.Equal(new Position(111, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 0, 11));
+            Assert.Equal(new Position(111, 189), AutonomousMiningSurveyPolicy.GetSite(origin, 7, 11));
+            Assert.Equal(new Position(122, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 8, 11));
+            Assert.Equal(new Position(122, 189), AutonomousMiningSurveyPolicy.GetSite(origin, 23, 11));
+            Assert.Equal(new Position(133, 200), AutonomousMiningSurveyPolicy.GetSite(origin, 24, 11));
+            Assert.Equal(new Position(133, 189), AutonomousMiningSurveyPolicy.GetSite(origin, 47, 11));
+            Assert.Equal(3, AutonomousMiningSurveyPolicy.GetRingCount(48));
         }
 
         [Fact]

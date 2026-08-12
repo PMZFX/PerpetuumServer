@@ -230,6 +230,7 @@ namespace Perpetuum.Services.Autonomous
                 case MiningState.WaitingForWorld:
                     _origin = player.CurrentPosition;
                     _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
+                    _surveySiteIndex = 0;
                     BeginScan(context);
                     break;
                 case MiningState.ResumingTarget:

@@ -77,17 +77,21 @@ namespace Perpetuum.Services.Autonomous
 
     public static class AutonomousMiningSurveyPolicy
     {
-        private static readonly (int X, int Y)[] Directions =
+        public static int GetRingCount(int siteCount)
         {
-            (1, 0),
-            (1, 1),
-            (0, 1),
-            (-1, 1),
-            (-1, 0),
-            (-1, -1),
-            (0, -1),
-            (1, -1)
-        };
+            if (siteCount < 0)
+                throw new ArgumentOutOfRangeException(nameof(siteCount));
+
+            int ring = 0;
+            int sitesThroughRing = 0;
+            while (sitesThroughRing < siteCount)
+            {
+                ring++;
+                sitesThroughRing += 8 * ring;
+            }
+
+            return ring;
+        }
 
         public static Position GetSite(Position origin, int siteIndex, int stepDistance)
         {
@@ -96,11 +100,41 @@ namespace Perpetuum.Services.Autonomous
             if (stepDistance <= 0)
                 throw new ArgumentOutOfRangeException(nameof(stepDistance));
 
-            int ring = siteIndex / Directions.Length + 1;
-            (int x, int y) = Directions[siteIndex % Directions.Length];
+            int ring = 1;
+            int indexInRing = siteIndex;
+            while (indexInRing >= 8 * ring)
+            {
+                indexInRing -= 8 * ring;
+                ring++;
+            }
+
+            (int x, int y) = GetRingOffset(ring, indexInRing);
             return new Position(
-                origin.X + x * ring * stepDistance,
-                origin.Y + y * ring * stepDistance);
+                origin.X + x * stepDistance,
+                origin.Y + y * stepDistance);
+        }
+
+        private static (int X, int Y) GetRingOffset(int ring, int index)
+        {
+            int eastUpperLength = ring + 1;
+            if (index < eastUpperLength)
+                return (ring, index);
+            index -= eastUpperLength;
+
+            int edgeLength = ring * 2;
+            if (index < edgeLength)
+                return (ring - 1 - index, ring);
+            index -= edgeLength;
+
+            if (index < edgeLength)
+                return (-ring, ring - 1 - index);
+            index -= edgeLength;
+
+            if (index < edgeLength)
+                return (-ring + 1 + index, -ring);
+            index -= edgeLength;
+
+            return (ring, -ring + 1 + index);
         }
     }
 }

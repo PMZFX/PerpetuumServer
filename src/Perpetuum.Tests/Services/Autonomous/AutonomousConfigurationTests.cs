@@ -202,14 +202,26 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Theory]
-        [InlineData(1, 16)]
-        [InlineData(18, 17)]
+        [InlineData(1, 48)]
+        [InlineData(18, 129)]
         public void InvalidMiningSurveyBoundsAreRejected(int stepDistance, int maxSites)
         {
             var options = new AutonomousMiningOptions
             {
                 SurveyStepDistance = stepDistance,
                 MaxSurveySites = maxSites
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
+
+        [Fact]
+        public void MiningSurveyMustRemainWithinNavigationReturnRange()
+        {
+            var options = new AutonomousMiningOptions
+            {
+                SurveyStepDistance = 18,
+                MaxSurveySites = 48
             };
 
             Assert.Throws<InvalidOperationException>(() => options.Validate(12));

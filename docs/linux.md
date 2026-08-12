@@ -246,8 +246,8 @@ for the configured material.
     "LockTimeoutSeconds": 8,
     "MaxMiningSeconds": 300,
     "MaxScanAttempts": 3,
-    "SurveyStepDistance": 18,
-    "MaxSurveySites": 16,
+    "SurveyStepDistance": 11,
+    "MaxSurveySites": 48,
     "Resupply": {
       "Enabled": true,
       "ReloadBelowRatio": 0.5,
@@ -276,11 +276,14 @@ Equipment selection sees only the robot fitting and loaded ammunition; cargo
 decisions see only the active robot's own inventory and capacity. Scanner
 probes and mining charges are consumed through the normal module state machine.
 An empty scan advances through at most `MaxSurveySites` deterministic search
-positions in two rings around the terminal spawn, separated by
+positions in a contiguous square spiral around the terminal spawn, separated by
 `SurveyStepDistance`. Every position must be reached by normal pathfinding and
 movement before another probe is consumed. Survey positions are not mineral
 facts and are not persisted as deposit targets; only a non-empty scanner
-observation can authorize travel to a mining tile.
+observation can authorize travel to a mining tile. The default 48-site bound
+covers three rings and resets after each completed dock/undock cycle. The
+configured site count and spacing are also constrained to keep every survey
+position within the navigator's safe return range.
 
 Mining progress requires `dbo.ai_actor_work_state`, created by
 `database/overlays/002_ai_actor_work_state.sql`. Each transition records the
