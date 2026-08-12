@@ -144,9 +144,10 @@ namespace Perpetuum.Services.Autonomous
                 return true;
             }
 
-            IReadOnlyList<AutonomousTeleportLink> route = AutonomousTeleportRoutePolicy.FindRoute(
+            IReadOnlyList<AutonomousTeleportLink> route = AutonomousTeleportRoutePolicy.FindRouteFromPosition(
                 player.Zone.Id,
                 TargetZoneId,
+                player.CurrentPosition,
                 _network.Observe());
             if (route.Count == 0)
             {

@@ -71,6 +71,24 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(new[] {3}, inbound.Select(link => link.DescriptionId));
         }
 
+        [Fact]
+        public void EqualHopRoutesPreferTheClosestFirstPublicExit()
+        {
+            var links = new[]
+            {
+                Link(1, 0, 8, position: new Position(900, 900)),
+                Link(2, 0, 8, position: new Position(110, 100))
+            };
+
+            var route = AutonomousTeleportRoutePolicy.FindRouteFromPosition(
+                0,
+                8,
+                new Position(100, 100),
+                links);
+
+            Assert.Equal(new[] {2}, route.Select(link => link.DescriptionId));
+        }
+
         private static AutonomousTeleportLink Link(
             int id,
             int sourceZone,
@@ -78,13 +96,14 @@ namespace Perpetuum.Tests.Services.Autonomous
             bool active = true,
             bool listable = true,
             bool valid = true,
-            TeleportDescriptionType type = TeleportDescriptionType.AnotherZone)
+            TeleportDescriptionType type = TeleportDescriptionType.AnotherZone,
+            Position? position = null)
         {
             return new AutonomousTeleportLink(
                 id,
                 1000 + id,
                 sourceZone,
-                new Position(100 + id, 200 + id),
+                position ?? new Position(100 + id, 200 + id),
                 7,
                 targetZone,
                 type,
