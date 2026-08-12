@@ -197,6 +197,21 @@ Module activation and ammunition operations continue through the existing
 module state machine and inventory transactions, preserving lock, range, line
 of sight, core, ammunition, aggression, PvP, cycle, and damage rules.
 
+World-teleport use is also a shared authenticated action. The stock-client
+handler is only a protocol adapter; the action resolves the actor's real
+in-world player and retains channel activity and validity, source range,
+teleport sickness, PvP restrictions, mobile-teleport ownership and gang rules,
+transactional movement, mission progress, cooldown, and activation behavior.
+Autonomous callers receive no special destination or movement facility.
+
+For later hauling and regional trading, the autonomous layer can copy the same
+listable teleport descriptions returned to clients, including public source
+column position and range. Its route policy considers only active, valid,
+listable inter-zone channels and deterministically selects a shortest sequence
+of channel IDs. It does not yet move an actor through that route; reaching each
+column through ordinary terrain navigation and choosing an economic destination
+remain separate behavior modules.
+
 Patrol requires the project database overlay that creates
 `dbo.ai_actor_state`. It durably records the expected robot. If that robot is
 destroyed, removed, or replaced, navigation stops and a recovery audit event is
