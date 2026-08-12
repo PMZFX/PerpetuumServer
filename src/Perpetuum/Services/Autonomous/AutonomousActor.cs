@@ -9,6 +9,8 @@ namespace Perpetuum.Services.Autonomous
 {
     public sealed class AutonomousActor : IAutonomousActor
     {
+        private static readonly TimeSpan TeleportWorldEntryTimeout = TimeSpan.FromSeconds(20);
+
         private readonly Character _character;
         private readonly ISessionManager _sessionManager;
         private readonly IZoneManager _zoneManager;
@@ -19,6 +21,7 @@ namespace Perpetuum.Services.Autonomous
         private Player _initializedPlayer;
         private bool _behaviorRunning;
         private string _reason;
+        private TimeSpan _missingPlayerElapsed;
 
         public AutonomousActor(
             AutonomousActorDefinition definition,
@@ -53,6 +56,7 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous character {CharacterId} is not active.");
 
             _reason = null;
+            _missingPlayerElapsed = TimeSpan.Zero;
             Status = AutonomousActorStatus.Standby;
             _audit.Write(CharacterId, "started", Status);
         }
@@ -83,6 +87,16 @@ namespace Perpetuum.Services.Autonomous
             Player player = _zoneManager.GetPlayer(_character);
             if (player == null && !_character.IsDocked && _character.ZoneId.HasValue)
             {
+                bool teleportEntryPending = _initializedPlayer != null && _initializedPlayer.States.Teleport;
+                if (AutonomousWorldEntryPolicy.ShouldWaitForTeleportEntry(
+                        teleportEntryPending,
+                        _missingPlayerElapsed,
+                        TeleportWorldEntryTimeout))
+                {
+                    _missingPlayerElapsed += elapsed;
+                    return;
+                }
+
                 IZone persistedZone = _zoneManager.GetZone(_character.ZoneId.Value);
                 if (persistedZone == null)
                     throw new InvalidOperationException($"Autonomous character {CharacterId} has unknown persisted zone {_character.ZoneId.Value}.");
@@ -91,7 +105,14 @@ namespace Perpetuum.Services.Autonomous
                 _audit.Write(CharacterId, "world_restored", Status, $"zone_{persistedZone.Id}");
             }
             if (player == null)
+            {
                 _initializedPlayer = null;
+                _missingPlayerElapsed = TimeSpan.Zero;
+            }
+            else
+            {
+                _missingPlayerElapsed = TimeSpan.Zero;
+            }
             if (player != null && player.Session != ZoneSession.None && player.Session != _zoneSession)
             {
                 Suspend("external_zone_session");

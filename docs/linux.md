@@ -208,9 +208,17 @@ For later hauling and regional trading, the autonomous layer can copy the same
 listable teleport descriptions returned to clients, including public source
 column position and range. Its route policy considers only active, valid,
 listable inter-zone channels and deterministically selects a shortest sequence
-of channel IDs. It does not yet move an actor through that route; reaching each
-column through ordinary terrain navigation and choosing an economic destination
-remain separate behavior modules.
+of channel IDs. The reusable world-travel controller advances toward each
+source in deterministic 36-unit local legs, using the normal bounded A* and
+movement-input service for every leg. If a leg is blocked, bounded alternate
+headings fan out around the obstacle; the controller never writes position or
+speed. At the column it waits for normal teleport sickness to expire, invokes
+the shared audited action, waits for ordinary asynchronous zone entry, then
+recomputes the remaining public route from the zone actually reached. A
+20-second transition grace prevents headless restart recovery from racing that
+zone entry, while retaining recovery if entry genuinely fails. Career policy
+still chooses the economic destination and decides how to handle a reported
+unavailable, blocked, or timed-out route.
 
 Patrol requires the project database overlay that creates
 `dbo.ai_actor_state`. It durably records the expected robot. If that robot is
