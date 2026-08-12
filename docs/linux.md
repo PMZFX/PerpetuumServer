@@ -281,8 +281,8 @@ positions in a contiguous square spiral around the terminal spawn, separated by
 movement before another probe is consumed. Survey positions are not mineral
 facts and are not persisted as deposit targets; only a non-empty scanner
 observation can authorize travel to a mining tile. The default 48-site bound
-covers three rings. The configured site count and spacing are constrained to
-keep every survey position within the navigator's safe return range.
+covers three rings. Survey spacing is constrained so every adjacent route leg
+stays within the navigator's safe planning range.
 
 Survey progress is retained across ordinary dock, probe resupply, and redeploy
 trips, so a fitted module with fewer charges than `MaxSurveySites` eventually
@@ -295,6 +295,13 @@ replans, recovery first takes a short normal-movement escape step on the
 actor's observed side of the terminal and then targets the outer docking
 radius. Subsequent attempts rotate through deterministic escape and approach
 points instead of retrying the identical endpoint indefinitely.
+
+For wider configured surveys, each adjacent spiral leg—not the total distance
+from the terminal—is constrained to the navigator's safe range. The origin and
+next site already persisted in `dbo.ai_actor_work_state` deterministically
+reconstruct the candidate trail after a restart. Unrouteable candidates are
+again rejected by normal pathfinding; the reconstruction contains no mineral
+result or hidden terrain-layer data.
 
 Mining progress requires `dbo.ai_actor_work_state`, created by
 `database/overlays/002_ai_actor_work_state.sql`. Each transition records the
