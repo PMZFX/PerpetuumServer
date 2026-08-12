@@ -246,6 +246,11 @@ for the configured material.
     "LockTimeoutSeconds": 8,
     "MaxMiningSeconds": 300,
     "MaxScanAttempts": 3,
+    "Resupply": {
+      "Enabled": true,
+      "ReloadBelowRatio": 0.5,
+      "RetrySeconds": 60
+    },
     "Market": {
       "Enabled": true,
       "SellAllRawMaterials": true,
@@ -290,6 +295,15 @@ history it lists at that minimum. Normal order slots, listing fees, wallet
 balance, item ownership, saleability, and market availability all apply. A
 rejected sale is audited as `mining_market_blocked` and retried after
 `RetrySeconds`; ore is never discarded and credits are never granted directly.
+
+Docked resupply is separately controlled by `Resupply`. Before undocking, the
+miner examines only the fitted modules and ammunition already in its active
+robot cargo. It reloads one tile probe or matching mining-charge stack at a
+time through the same docked `equipAmmo` action used by the client. A module is
+eligible below `ReloadBelowRatio`; a different or empty load is also eligible.
+If no fitted tile scanner and drill have usable charges after resupply, the
+miner stays docked, emits `mining_equipment_ready_required`, and checks again
+after `RetrySeconds`. It does not create, buy, or silently refill ammunition.
 
 Stop with enough time for zone-layer persistence:
 

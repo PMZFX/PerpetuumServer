@@ -1608,6 +1608,7 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<RelocateItemsActionService>().As<IRelocateItemsActionService>();
             _ = _builder.RegisterType<MarketBuyActionService>().As<IMarketBuyActionService>();
             _ = _builder.RegisterType<MarketCreateSellOrderActionService>().As<IMarketCreateSellOrderActionService>();
+            _ = _builder.RegisterType<EquipAmmoActionService>().As<IEquipAmmoActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
             _ = _builder.RegisterType<MovementInputService>().As<IMovementInputService>().SingleInstance();
             _ = _builder.RegisterType<TargetLockActionService>().As<ITargetLockActionService>();
@@ -1643,6 +1644,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousMarketObservationService>();
             _ = _builder.RegisterType<AutonomousCargoDispositionService>()
                 .As<IAutonomousCargoDispositionService>();
+            _ = _builder.RegisterType<AutonomousMiningResupplyService>()
+                .As<IAutonomousMiningResupplyService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.RegisterType<MiningAutonomousActorBehavior>()
