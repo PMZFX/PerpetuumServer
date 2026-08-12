@@ -13,7 +13,8 @@ namespace Perpetuum.Services.Autonomous
             int? zoneId,
             Position? origin,
             Position? target,
-            MaterialType materialType)
+            MaterialType materialType,
+            int surveySiteIndex = 0)
         {
             CharacterId = characterId;
             BehaviorName = behaviorName;
@@ -23,6 +24,7 @@ namespace Perpetuum.Services.Autonomous
             Origin = origin;
             Target = target;
             MaterialType = materialType;
+            SurveySiteIndex = surveySiteIndex;
         }
 
         public int CharacterId { get; }
@@ -33,6 +35,7 @@ namespace Perpetuum.Services.Autonomous
         public Position? Origin { get; }
         public Position? Target { get; }
         public MaterialType MaterialType { get; }
+        public int SurveySiteIndex { get; }
     }
 
     public interface IAutonomousWorkStateStore
@@ -49,7 +52,7 @@ namespace Perpetuum.Services.Autonomous
                 .CommandText(@"select character_id, behavior_name, phase,
                                      docking_base_eid, zone_id,
                                      origin_x, origin_y, target_x, target_y,
-                                     material_type
+                                     material_type, survey_site_index
                               from dbo.ai_actor_work_state
                               where character_id = @characterId")
                 .SetParameter("@characterId", characterId)
@@ -69,7 +72,8 @@ namespace Perpetuum.Services.Autonomous
                 record.GetValue<int?>("zone_id"),
                 ToPosition(originX, originY),
                 ToPosition(targetX, targetY),
-                (MaterialType)(record.GetValue<int?>("material_type") ?? 0));
+                (MaterialType)(record.GetValue<int?>("material_type") ?? 0),
+                record.GetValue<int?>("survey_site_index") ?? 0);
         }
 
         public void Save(AutonomousWorkState state)
@@ -87,6 +91,7 @@ namespace Perpetuum.Services.Autonomous
                                   target_x = @targetX,
                                   target_y = @targetY,
                                   material_type = @materialType,
+                                  survey_site_index = @surveySiteIndex,
                                   updated_at = sysutcdatetime()
                               where character_id = @characterId;
                               if @@rowcount = 0
@@ -95,12 +100,12 @@ namespace Perpetuum.Services.Autonomous
                                       (character_id, behavior_name, phase,
                                        docking_base_eid, zone_id,
                                        origin_x, origin_y, target_x, target_y,
-                                       material_type)
+                                       material_type, survey_site_index)
                                   values
                                       (@characterId, @behaviorName, @phase,
                                        @dockingBaseEid, @zoneId,
                                        @originX, @originY, @targetX, @targetY,
-                                       @materialType);
+                                       @materialType, @surveySiteIndex);
                               end;
                               commit transaction;")
                 .SetParameter("@characterId", state.CharacterId)
@@ -115,6 +120,7 @@ namespace Perpetuum.Services.Autonomous
                 .SetParameter("@materialType", state.MaterialType == MaterialType.Undefined
                     ? null
                     : (object)(int)state.MaterialType)
+                .SetParameter("@surveySiteIndex", state.SurveySiteIndex)
                 .ExecuteNonQuery();
         }
 

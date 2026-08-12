@@ -130,6 +130,8 @@ namespace Perpetuum.Services.Autonomous
 
     public sealed class AutonomousNavigationService : IAutonomousNavigationService
     {
+        public const double MaximumStartDistance = 48;
+
         private const int SearchMargin = 8;
         private const int MaxPathLength = 256;
         private const int MaxReplans = 2;
@@ -154,7 +156,7 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(throttle));
 
             Player player = context.Actor.GetPlayerRobotFromZone();
-            if (player?.Zone == null || Distance2D(player.CurrentPosition, destination) > 48)
+            if (player?.Zone == null || Distance2D(player.CurrentPosition, destination) > MaximumStartDistance)
                 return false;
 
             _destination = player.Zone.FixZ(destination);

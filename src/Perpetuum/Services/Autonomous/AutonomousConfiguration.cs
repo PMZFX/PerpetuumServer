@@ -92,8 +92,8 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(15), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int DockedDwellSeconds { get; set; } = 15;
 
-        [DefaultValue(10), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
-        public int ScanTimeoutSeconds { get; set; } = 10;
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int ScanTimeoutSeconds { get; set; } = 30;
 
         [DefaultValue(8), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int LockTimeoutSeconds { get; set; } = 8;
@@ -103,6 +103,12 @@ namespace Perpetuum.Services.Autonomous
 
         [DefaultValue(3), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int MaxScanAttempts { get; set; } = 3;
+
+        [DefaultValue(11), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int SurveyStepDistance { get; set; } = 11;
+
+        [DefaultValue(48), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxSurveySites { get; set; } = 48;
 
         public AutonomousThreatOptions Threat { get; set; } = new AutonomousThreatOptions();
 
@@ -136,6 +142,14 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous mining duration for character {characterId} must be between 1 and 3600 seconds.");
             if (MaxScanAttempts < 1 || MaxScanAttempts > 20)
                 throw new InvalidOperationException($"Autonomous mining scan attempts for character {characterId} must be between 1 and 20.");
+            if (SurveyStepDistance < 2 || SurveyStepDistance > 24)
+                throw new InvalidOperationException($"Autonomous mining survey step for character {characterId} must be between 2 and 24 terrain units.");
+            if (MaxSurveySites < 0 || MaxSurveySites > 128)
+                throw new InvalidOperationException($"Autonomous mining survey sites for character {characterId} must be between 0 and 128.");
+            int furthestSurveyRing = AutonomousMiningSurveyPolicy.GetRingCount(MaxSurveySites);
+            double furthestSurveyDistance = SurveyStepDistance * furthestSurveyRing * Math.Sqrt(2);
+            if (furthestSurveyDistance > AutonomousNavigationService.MaximumStartDistance)
+                throw new InvalidOperationException($"Autonomous mining survey extent for character {characterId} must remain within {AutonomousNavigationService.MaximumStartDistance} terrain units of its origin.");
             if (Threat == null)
                 throw new InvalidOperationException($"Autonomous mining threat options for character {characterId} cannot be null.");
             Threat.Validate(characterId);
