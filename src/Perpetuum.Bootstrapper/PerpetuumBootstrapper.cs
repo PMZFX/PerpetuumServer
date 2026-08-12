@@ -1643,6 +1643,11 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousCargoService>();
             _ = _builder.RegisterType<AutonomousMarketObservationService>()
                 .As<IAutonomousMarketObservationService>();
+            _ = _builder.RegisterType<DatabaseAutonomousMarketMemoryStore>()
+                .As<IAutonomousMarketMemoryStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousRegionalMarketService>()
+                .As<IAutonomousRegionalMarketService>();
             _ = _builder.RegisterType<AutonomousCargoDispositionService>()
                 .As<IAutonomousCargoDispositionService>();
             _ = _builder.RegisterType<AutonomousMiningProcurementService>()
