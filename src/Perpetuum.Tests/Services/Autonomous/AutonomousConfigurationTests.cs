@@ -172,5 +172,20 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
+
+        [Fact]
+        public void InvalidAutonomousMarketSettingsAreRejectedEvenWhileDisabled()
+        {
+            var options = new AutonomousMiningOptions
+            {
+                Market = new AutonomousMarketOptions { MinimumUnitPrice = 0 }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+
+            options.Market.MinimumUnitPrice = 1;
+            options.Market.OrderDurationHours = 0;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
     }
 }

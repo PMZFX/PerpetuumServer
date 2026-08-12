@@ -48,6 +48,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousPerceptionService _perception;
         private readonly IAutonomousMiningEquipmentService _equipment;
         private readonly IAutonomousCargoService _cargo;
+        private readonly IAutonomousCargoDispositionService _cargoDisposition;
         private readonly IMineralScanObservationService _scanObservations;
         private readonly ITargetLockActionService _targetLocks;
         private readonly IModuleActionService _modules;
@@ -71,6 +72,7 @@ namespace Perpetuum.Services.Autonomous
         private bool _cargoHoldAudited;
         private bool _retreatingFromThreat;
         private bool _drillActive;
+        private TimeSpan _marketRetryRemaining;
 
         public MiningAutonomousActorBehavior(
             AutonomousActorDefinition definition,
@@ -80,6 +82,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousPerceptionService perception,
             IAutonomousMiningEquipmentService equipment,
             IAutonomousCargoService cargo,
+            IAutonomousCargoDispositionService cargoDisposition,
             IMineralScanObservationService scanObservations,
             ITargetLockActionService targetLocks,
             IModuleActionService modules,
@@ -94,6 +97,7 @@ namespace Perpetuum.Services.Autonomous
             _perception = perception ?? throw new ArgumentNullException(nameof(perception));
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _cargo = cargo ?? throw new ArgumentNullException(nameof(cargo));
+            _cargoDisposition = cargoDisposition ?? throw new ArgumentNullException(nameof(cargoDisposition));
             _scanObservations = scanObservations ?? throw new ArgumentNullException(nameof(scanObservations));
             _targetLocks = targetLocks ?? throw new ArgumentNullException(nameof(targetLocks));
             _modules = modules ?? throw new ArgumentNullException(nameof(modules));
@@ -124,6 +128,7 @@ namespace Perpetuum.Services.Autonomous
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
             _drillActive = false;
+            _marketRetryRemaining = TimeSpan.Zero;
 
             AutonomousWorkState persisted = _workStateStore.Load(context.Actor.Id);
             AutonomousMiningResumeDirective resume = AutonomousMiningResumePolicy.Select(
@@ -189,7 +194,7 @@ namespace Perpetuum.Services.Autonomous
 
             if (context.Actor.IsDocked)
             {
-                UpdateDocked(context);
+                UpdateDocked(context, elapsed);
                 return;
             }
 
@@ -255,7 +260,7 @@ namespace Perpetuum.Services.Autonomous
             }
         }
 
-        private void UpdateDocked(GameActionContext context)
+        private void UpdateDocked(GameActionContext context, TimeSpan elapsed)
         {
             if (_robotRecoveryRequired)
                 return;
@@ -269,6 +274,36 @@ namespace Perpetuum.Services.Autonomous
                 _scanAttempts = 0;
                 SetState(context, MiningState.Docked);
                 return;
+            }
+
+            if (_marketRetryRemaining > TimeSpan.Zero)
+            {
+                _marketRetryRemaining -= elapsed;
+                return;
+            }
+
+            if (_definition.Mining.Market.Enabled)
+            {
+                try
+                {
+                    AutonomousCargoDisposition disposition = _cargoDisposition.SellNext(
+                        context,
+                        _material,
+                        _definition.Mining.Market);
+                    if (disposition.Result == AutonomousCargoDispositionResult.Sold)
+                    {
+                        _audit.Write(context.Actor.Id, "mining_market_sell", AutonomousActorStatus.Active,
+                            $"definition_{disposition.Definition}_quantity_{disposition.Quantity}_unit_price_{disposition.UnitPrice}");
+                        return;
+                    }
+                }
+                catch (PerpetuumException exception)
+                {
+                    _marketRetryRemaining = TimeSpan.FromSeconds(_definition.Mining.Market.RetrySeconds);
+                    _audit.Write(context.Actor.Id, "mining_market_blocked", AutonomousActorStatus.Active,
+                        exception.error.ToString());
+                    return;
+                }
             }
 
             AutonomousCargoSnapshot cargo = _cargo.Observe(context);

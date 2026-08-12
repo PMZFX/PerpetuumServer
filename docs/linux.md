@@ -246,6 +246,14 @@ for the configured material.
     "LockTimeoutSeconds": 8,
     "MaxMiningSeconds": 300,
     "MaxScanAttempts": 3,
+    "Market": {
+      "Enabled": true,
+      "SellAllRawMaterials": true,
+      "MinimumUnitPrice": 1.0,
+      "ListPriceFactor": 0.98,
+      "OrderDurationHours": 24,
+      "RetrySeconds": 60
+    },
     "Threat": {
       "Enabled": true,
       "ResponseRange": 35.0,
@@ -268,9 +276,20 @@ target only when those facts still match; otherwise the actor discards stale
 coordinates and uses normal base recovery. The separate `dbo.ai_actor_state`
 robot identity guard remains authoritative.
 
-Until store-and-sell is enabled, a docked miner at or above `CargoFillRatio`
-stays docked and emits `mining_cargo_ready`. It does not discard ore or bypass
-player inventory and market actions.
+Market participation remains separately opt-in. When `Market.Enabled` is false,
+a docked miner at or above `CargoFillRatio` stays docked and emits
+`mining_cargo_ready`. When enabled, the miner sells one eligible raw-material
+stack per autonomous tick directly from its active robot cargo through the
+normal market sell-order action. `SellAllRawMaterials` includes mining
+byproducts; disabling it restricts sales to the configured primary material.
+
+Pricing uses information visible in the local market UI. An eligible best buy
+order is accepted first. Otherwise the bot lists at the local trade average
+times `ListPriceFactor`, protected by `MinimumUnitPrice`; without useful market
+history it lists at that minimum. Normal order slots, listing fees, wallet
+balance, item ownership, saleability, and market availability all apply. A
+rejected sale is audited as `mining_market_blocked` and retried after
+`RetrySeconds`; ore is never discarded and credits are never granted directly.
 
 Stop with enough time for zone-layer persistence:
 
