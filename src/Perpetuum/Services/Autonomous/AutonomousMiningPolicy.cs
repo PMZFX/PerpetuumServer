@@ -101,6 +101,43 @@ namespace Perpetuum.Services.Autonomous
             return trail;
         }
 
+        public static Position[] RestoreTransitRoute(
+            Position origin,
+            int nextSiteIndex,
+            int stepDistance,
+            IReadOnlyList<Position> persistedRoute)
+        {
+            if (nextSiteIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(nextSiteIndex));
+            if (persistedRoute != null &&
+                persistedRoute.Count > 0 &&
+                persistedRoute.Count <= nextSiteIndex)
+            {
+                Position previous = origin;
+                bool valid = true;
+                foreach (Position waypoint in persistedRoute)
+                {
+                    if (!IsFinite(waypoint) ||
+                        previous.TotalDistance2D(waypoint) > AutonomousNavigationService.MaximumStartDistance)
+                    {
+                        valid = false;
+                        break;
+                    }
+                    previous = waypoint;
+                }
+
+                if (valid)
+                {
+                    var restored = new Position[persistedRoute.Count];
+                    for (int index = 0; index < restored.Length; index++)
+                        restored[index] = persistedRoute[index];
+                    return restored;
+                }
+            }
+
+            return RebuildCandidateTrail(origin, nextSiteIndex, stepDistance);
+        }
+
         public static int SelectResumeSite(
             MaterialType configuredMaterial,
             int maxSites,
@@ -177,6 +214,14 @@ namespace Perpetuum.Services.Autonomous
 
             return (ring, -ring + 1 + index);
         }
+
+        private static bool IsFinite(Position position)
+        {
+            return !double.IsNaN(position.X) &&
+                   !double.IsInfinity(position.X) &&
+                   !double.IsNaN(position.Y) &&
+                   !double.IsInfinity(position.Y);
+        }
     }
 
     public static class AutonomousDockingRecoveryPolicy
@@ -194,6 +239,47 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(candidateIndex));
 
             return (int)((preferredDirectionIndex + (long)attempt * AttemptStride + candidateIndex) % DirectionCount);
+        }
+    }
+
+    public static class AutonomousTerminalArcPolicy
+    {
+        public static Position[] Build(
+            Position center,
+            Position start,
+            Position target,
+            double minimumRadius,
+            double maximumLegDistance)
+        {
+            if (minimumRadius <= 0 || double.IsNaN(minimumRadius) || double.IsInfinity(minimumRadius))
+                throw new ArgumentOutOfRangeException(nameof(minimumRadius));
+            if (maximumLegDistance <= 0 || double.IsNaN(maximumLegDistance) || double.IsInfinity(maximumLegDistance))
+                throw new ArgumentOutOfRangeException(nameof(maximumLegDistance));
+
+            double radius = Math.Max(minimumRadius,
+                Math.Max(center.TotalDistance2D(start), center.TotalDistance2D(target)));
+            int directionCount = Math.Max(16, (int)Math.Ceiling(2 * Math.PI * radius / maximumLegDistance));
+            int startIndex = DirectionIndex(center.DirectionTo(start), directionCount);
+            int targetIndex = DirectionIndex(center.DirectionTo(target), directionCount);
+            int clockwise = (targetIndex - startIndex + directionCount) % directionCount;
+            int counterClockwise = (startIndex - targetIndex + directionCount) % directionCount;
+            int direction = clockwise <= counterClockwise ? 1 : -1;
+            int steps = Math.Min(clockwise, counterClockwise);
+            var route = new List<Position>(steps + 1);
+
+            for (int step = 1; step <= steps; step++)
+            {
+                int index = (startIndex + direction * step + directionCount) % directionCount;
+                route.Add(center.OffsetInDirection(index / (double)directionCount, radius).Center);
+            }
+            route.Add(target);
+            return route.ToArray();
+        }
+
+        private static int DirectionIndex(double direction, int directionCount)
+        {
+            int index = (int)Math.Round(direction * directionCount) % directionCount;
+            return index < 0 ? index + directionCount : index;
         }
     }
 

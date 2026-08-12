@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json;
 using Perpetuum.Data;
 using Perpetuum.Zones.Terrains.Materials;
 
@@ -14,7 +18,8 @@ namespace Perpetuum.Services.Autonomous
             Position? origin,
             Position? target,
             MaterialType materialType,
-            int surveySiteIndex = 0)
+            int surveySiteIndex = 0,
+            IEnumerable<Position> surveyRoute = null)
         {
             CharacterId = characterId;
             BehaviorName = behaviorName;
@@ -25,6 +30,7 @@ namespace Perpetuum.Services.Autonomous
             Target = target;
             MaterialType = materialType;
             SurveySiteIndex = surveySiteIndex;
+            SurveyRoute = (surveyRoute ?? Enumerable.Empty<Position>()).ToArray();
         }
 
         public int CharacterId { get; }
@@ -36,6 +42,7 @@ namespace Perpetuum.Services.Autonomous
         public Position? Target { get; }
         public MaterialType MaterialType { get; }
         public int SurveySiteIndex { get; }
+        public IReadOnlyList<Position> SurveyRoute { get; }
     }
 
     public interface IAutonomousWorkStateStore
@@ -52,7 +59,7 @@ namespace Perpetuum.Services.Autonomous
                 .CommandText(@"select character_id, behavior_name, phase,
                                      docking_base_eid, zone_id,
                                      origin_x, origin_y, target_x, target_y,
-                                     material_type, survey_site_index
+                                     material_type, survey_site_index, survey_route
                               from dbo.ai_actor_work_state
                               where character_id = @characterId")
                 .SetParameter("@characterId", characterId)
@@ -73,7 +80,8 @@ namespace Perpetuum.Services.Autonomous
                 ToPosition(originX, originY),
                 ToPosition(targetX, targetY),
                 (MaterialType)(record.GetValue<int?>("material_type") ?? 0),
-                record.GetValue<int?>("survey_site_index") ?? 0);
+                record.GetValue<int?>("survey_site_index") ?? 0,
+                AutonomousSurveyRouteCodec.Deserialize(record.GetValue<string>("survey_route")));
         }
 
         public void Save(AutonomousWorkState state)
@@ -92,6 +100,7 @@ namespace Perpetuum.Services.Autonomous
                                   target_y = @targetY,
                                   material_type = @materialType,
                                   survey_site_index = @surveySiteIndex,
+                                  survey_route = @surveyRoute,
                                   updated_at = sysutcdatetime()
                               where character_id = @characterId;
                               if @@rowcount = 0
@@ -100,12 +109,12 @@ namespace Perpetuum.Services.Autonomous
                                       (character_id, behavior_name, phase,
                                        docking_base_eid, zone_id,
                                        origin_x, origin_y, target_x, target_y,
-                                       material_type, survey_site_index)
+                                       material_type, survey_site_index, survey_route)
                                   values
                                       (@characterId, @behaviorName, @phase,
                                        @dockingBaseEid, @zoneId,
                                        @originX, @originY, @targetX, @targetY,
-                                       @materialType, @surveySiteIndex);
+                                       @materialType, @surveySiteIndex, @surveyRoute);
                               end;
                               commit transaction;")
                 .SetParameter("@characterId", state.CharacterId)
@@ -121,6 +130,7 @@ namespace Perpetuum.Services.Autonomous
                     ? null
                     : (object)(int)state.MaterialType)
                 .SetParameter("@surveySiteIndex", state.SurveySiteIndex)
+                .SetParameter("@surveyRoute", AutonomousSurveyRouteCodec.Serialize(state.SurveyRoute))
                 .ExecuteNonQuery();
         }
 
@@ -132,6 +142,36 @@ namespace Perpetuum.Services.Autonomous
         private static object NullablePositive(long value)
         {
             return value > 0 ? (object)value : null;
+        }
+    }
+
+    public static class AutonomousSurveyRouteCodec
+    {
+        public static string Serialize(IEnumerable<Position> route)
+        {
+            if (route == null)
+                throw new ArgumentNullException(nameof(route));
+
+            double[][] coordinates = route.Select(position => new[] {position.X, position.Y}).ToArray();
+            return coordinates.Length == 0 ? null : JsonConvert.SerializeObject(coordinates);
+        }
+
+        public static IReadOnlyList<Position> Deserialize(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return Array.Empty<Position>();
+
+            try
+            {
+                double[][] coordinates = JsonConvert.DeserializeObject<double[][]>(value);
+                if (coordinates == null || coordinates.Any(pair => pair == null || pair.Length != 2))
+                    return Array.Empty<Position>();
+                return coordinates.Select(pair => new Position(pair[0], pair[1])).ToArray();
+            }
+            catch (JsonException)
+            {
+                return Array.Empty<Position>();
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ namespace Perpetuum.Services.Autonomous
             RecoveringWorld,
             WaitingForScan,
             ScanRetry,
+            TravellingToSurveyFrontier,
             TravellingToSurvey,
             TravellingToDeposit,
             LockingDeposit,
@@ -59,7 +60,10 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousActorStateStore _actorStateStore;
         private readonly IAutonomousWorkStateStore _workStateStore;
         private readonly IAutonomousActorAudit _audit;
+        private readonly List<Position> _surveyRoute = new List<Position>();
         private readonly List<Position> _surveyBreadcrumbs = new List<Position>();
+        private readonly List<Position> _surveyTransitReachedRoute = new List<Position>();
+        private readonly Queue<Position> _surveyTransitWaypoints = new Queue<Position>();
         private readonly Queue<Position> _returnWaypoints = new Queue<Position>();
         private AutonomousRobotRecoveryTracker _recovery;
         private MaterialType _material;
@@ -67,6 +71,7 @@ namespace Perpetuum.Services.Autonomous
         private TimeSpan _stateElapsed;
         private TimeSpan _miningElapsed;
         private Position? _origin;
+        private Position? _deploymentOrigin;
         private Position? _target;
         private long _dockingBaseEid;
         private long _expectedRobotEid;
@@ -75,6 +80,7 @@ namespace Perpetuum.Services.Autonomous
         private IMineralScanObservation _observationBeforeScan;
         private int _scanAttempts;
         private int _surveySiteIndex;
+        private int _surveyTransitBridgeWaypoints;
         private int _baseRecoveryAttempt;
         private bool _robotRecoveryRequired;
         private bool _cargoHoldAudited;
@@ -140,9 +146,14 @@ namespace Perpetuum.Services.Autonomous
             _observationBeforeScan = null;
             _scanAttempts = 0;
             _baseRecoveryAttempt = 0;
+            _surveyRoute.Clear();
             _surveyBreadcrumbs.Clear();
+            _surveyTransitReachedRoute.Clear();
+            _surveyTransitBridgeWaypoints = 0;
+            _surveyTransitWaypoints.Clear();
             _returnWaypoints.Clear();
             _miningElapsed = TimeSpan.Zero;
+            _deploymentOrigin = null;
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
             _drillActive = false;
@@ -166,15 +177,16 @@ namespace Perpetuum.Services.Autonomous
                 : persisted?.DockingBaseEid > 0
                 ? persisted.DockingBaseEid
                 : context.Actor.CurrentDockingBaseEid;
-            _origin = context.Actor.IsDocked ? null : persisted?.Origin;
+            _origin = context.Actor.IsDocked && _surveySiteIndex == 0 ? null : persisted?.Origin;
             _target = context.Actor.IsDocked ? null : persisted?.Target;
             if (_origin.HasValue && _surveySiteIndex > 0)
             {
-                foreach (Position waypoint in AutonomousMiningSurveyPolicy.RebuildCandidateTrail(
+                foreach (Position waypoint in AutonomousMiningSurveyPolicy.RestoreTransitRoute(
                              _origin.Value,
                              _surveySiteIndex,
-                             options.SurveyStepDistance))
-                    _surveyBreadcrumbs.Add(waypoint);
+                             options.SurveyStepDistance,
+                             persisted?.SurveyRoute))
+                    _surveyRoute.Add(waypoint);
             }
             switch (resume)
             {
@@ -215,6 +227,8 @@ namespace Perpetuum.Services.Autonomous
                     _targetLocks.Cancel(context, _ownedTerrainLockId);
             }
             _navigation.Reset();
+            _surveyTransitWaypoints.Clear();
+            _surveyTransitReachedRoute.Clear();
             _ownedTerrainLockId = 0;
             _drillActive = false;
         }
@@ -251,11 +265,17 @@ namespace Perpetuum.Services.Autonomous
             {
                 case MiningState.Docked:
                 case MiningState.WaitingForWorld:
-                    _origin = player.CurrentPosition;
+                    if (!_origin.HasValue || _surveySiteIndex == 0)
+                        _origin = player.CurrentPosition;
+                    _deploymentOrigin = player.CurrentPosition;
                     _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
                     _surveyBreadcrumbs.Clear();
+                    _surveyTransitWaypoints.Clear();
                     _returnWaypoints.Clear();
-                    BeginScan(context);
+                    if (_surveySiteIndex > 0)
+                        BeginSurveyTransit(context);
+                    else
+                        BeginScan(context);
                     break;
                 case MiningState.ResumingTarget:
                     BeginTargetTravel(context, true);
@@ -272,6 +292,9 @@ namespace Perpetuum.Services.Autonomous
                 case MiningState.ScanRetry:
                     if (_stateElapsed >= ScanRetryDelay)
                         BeginScan(context);
+                    break;
+                case MiningState.TravellingToSurveyFrontier:
+                    UpdateSurveyTransit(context, elapsed);
                     break;
                 case MiningState.TravellingToSurvey:
                     UpdateSurveyTravel(context, elapsed);
@@ -307,11 +330,17 @@ namespace Perpetuum.Services.Autonomous
             if (_state != MiningState.Docked)
             {
                 _navigation.Stop(context);
-                _origin = null;
                 _target = null;
+                _deploymentOrigin = null;
                 _scanAttempts = 0;
                 _baseRecoveryAttempt = 0;
                 _surveyBreadcrumbs.Clear();
+                if (_surveySiteIndex == 0)
+                {
+                    _origin = null;
+                    _surveyRoute.Clear();
+                }
+                _surveyTransitWaypoints.Clear();
                 _returnWaypoints.Clear();
                 SetState(context, MiningState.Docked);
                 return;
@@ -454,6 +483,117 @@ namespace Perpetuum.Services.Autonomous
             _audit.Write(context.Actor.Id, "mining_undock", AutonomousActorStatus.Active);
         }
 
+        private void BeginSurveyTransit(GameActionContext context)
+        {
+            if (!_origin.HasValue || _surveySiteIndex <= 0)
+            {
+                BeginScan(context);
+                return;
+            }
+
+            Position[] replayRoute = AutonomousMiningSurveyPolicy.RestoreTransitRoute(
+                _origin.Value,
+                _surveySiteIndex,
+                _definition.Mining.SurveyStepDistance,
+                _surveyRoute);
+            _surveyBreadcrumbs.Clear();
+            _surveyTransitReachedRoute.Clear();
+            _surveyTransitWaypoints.Clear();
+            Player player = context.Actor.GetPlayerRobotFromZone();
+            var dockingBase = context.Actor.GetCurrentDockingBase();
+            if (player != null && dockingBase?.Zone == player.Zone)
+            {
+                int radius = Math.Max(dockingBase.Size + 1, dockingBase.Size + dockingBase.SpawnRange);
+                foreach (Position waypoint in AutonomousTerminalArcPolicy.Build(
+                             dockingBase.CurrentPosition,
+                             player.CurrentPosition,
+                             _origin.Value,
+                             radius,
+                             18))
+                    _surveyTransitWaypoints.Enqueue(waypoint);
+            }
+            else
+            {
+                _surveyTransitWaypoints.Enqueue(_origin.Value);
+            }
+            _surveyTransitBridgeWaypoints = _surveyTransitWaypoints.Count;
+            foreach (Position waypoint in replayRoute)
+                _surveyTransitWaypoints.Enqueue(waypoint);
+
+            int waypointCount = _surveyTransitWaypoints.Count;
+            if (!TryStartNextSurveyTransitWaypoint(context))
+            {
+                BeginReturn(context, "survey_frontier_unreachable");
+                return;
+            }
+
+            SetState(context, MiningState.TravellingToSurveyFrontier);
+            _audit.Write(context.Actor.Id, "mining_survey_transit", AutonomousActorStatus.Active,
+                $"frontier_site_{_surveySiteIndex}_waypoints_{waypointCount}");
+        }
+
+        private void UpdateSurveyTransit(GameActionContext context, TimeSpan elapsed)
+        {
+            AutonomousNavigationStatus status = _navigation.Update(context, elapsed);
+            if (status == AutonomousNavigationStatus.Arrived)
+            {
+                _navigation.Stop(context);
+                bool wasBridgeWaypoint = _surveyTransitBridgeWaypoints > 0;
+                DiscardSurveyTransitWaypoint();
+                Player player = context.Actor.GetPlayerRobotFromZone();
+                if (player != null)
+                {
+                    _surveyBreadcrumbs.Add(player.CurrentPosition);
+                    if (!wasBridgeWaypoint)
+                        _surveyTransitReachedRoute.Add(player.CurrentPosition);
+                }
+
+                if (TryStartNextSurveyTransitWaypoint(context))
+                {
+                    SetState(context, MiningState.TravellingToSurveyFrontier);
+                    return;
+                }
+
+                CompleteSurveyTransit(context);
+            }
+            else if (status == AutonomousNavigationStatus.Blocked ||
+                     status == AutonomousNavigationStatus.Stuck)
+            {
+                _navigation.Stop(context);
+                DiscardSurveyTransitWaypoint();
+                if (TryStartNextSurveyTransitWaypoint(context))
+                {
+                    SetState(context, MiningState.TravellingToSurveyFrontier);
+                    return;
+                }
+
+                // A prior survey may legitimately have skipped its final candidate
+                // after terrain-aware navigation rejected it. Replaying every
+                // physically reachable predecessor is enough to restore that
+                // frontier; the normal survey loop will apply the same rules to
+                // the next candidate instead of forcing another resupply cycle.
+                if (_surveyTransitReachedRoute.Count > 0)
+                {
+                    CompleteSurveyTransit(context);
+                    return;
+                }
+                BeginReturn(context, "survey_frontier_blocked");
+            }
+        }
+
+        private void CompleteSurveyTransit(GameActionContext context)
+        {
+            _scanAttempts = 0;
+            if (_surveyTransitReachedRoute.Count > 0)
+            {
+                _surveyRoute.Clear();
+                _surveyRoute.AddRange(_surveyTransitReachedRoute);
+            }
+            _audit.Write(context.Actor.Id, "mining_survey_frontier_reached", AutonomousActorStatus.Active,
+                $"site_{_surveySiteIndex}");
+            BeginSurvey(context);
+        }
+
         private void BeginScan(GameActionContext context)
         {
             AutonomousMiningEquipmentSnapshot equipment = _equipment.Observe(context);
@@ -583,7 +723,10 @@ namespace Perpetuum.Services.Autonomous
                 _scanAttempts = 0;
                 Player player = context.Actor.GetPlayerRobotFromZone();
                 if (player != null)
+                {
                     _surveyBreadcrumbs.Add(player.CurrentPosition);
+                    _surveyRoute.Add(player.CurrentPosition);
+                }
                 _audit.Write(context.Actor.Id, "mining_survey_arrived", AutonomousActorStatus.Active,
                     $"site_{_surveySiteIndex}");
                 BeginScan(context);
@@ -687,11 +830,12 @@ namespace Perpetuum.Services.Autonomous
             }
             _drillActive = false;
             _ownedTerrainLockId = 0;
+            _surveyTransitWaypoints.Clear();
             _returnWaypoints.Clear();
             if (_origin.HasValue)
             {
                 foreach (Position waypoint in AutonomousMiningReturnRoutePolicy.Build(
-                             _origin.Value,
+                             _deploymentOrigin ?? _origin.Value,
                              _surveyBreadcrumbs))
                     _returnWaypoints.Enqueue(waypoint);
             }
@@ -813,6 +957,30 @@ namespace Perpetuum.Services.Autonomous
             return false;
         }
 
+        private bool TryStartNextSurveyTransitWaypoint(GameActionContext context)
+        {
+            while (_surveyTransitWaypoints.Count > 0)
+            {
+                if (_navigation.TryStart(
+                        context,
+                        _surveyTransitWaypoints.Peek(),
+                        _definition.Mining.Throttle))
+                    return true;
+                DiscardSurveyTransitWaypoint();
+            }
+
+            return false;
+        }
+
+        private void DiscardSurveyTransitWaypoint()
+        {
+            if (_surveyTransitWaypoints.Count == 0)
+                return;
+            _surveyTransitWaypoints.Dequeue();
+            if (_surveyTransitBridgeWaypoints > 0)
+                _surveyTransitBridgeWaypoints--;
+        }
+
         private void TryDock(GameActionContext context, Player player)
         {
             _navigation.Stop(context);
@@ -886,7 +1054,8 @@ namespace Perpetuum.Services.Autonomous
                 _origin,
                 _target,
                 _material,
-                _surveySiteIndex));
+                _surveySiteIndex,
+                _surveyRoute));
         }
     }
 }

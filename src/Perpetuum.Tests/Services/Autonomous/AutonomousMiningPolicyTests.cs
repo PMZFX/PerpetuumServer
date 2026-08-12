@@ -115,6 +115,61 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void ResupplyTransitFallsBackToEveryPriorCandidateWithoutARecordedRoute()
+        {
+            var origin = new Position(100, 200);
+
+            Position[] transit = AutonomousMiningSurveyPolicy.RebuildCandidateTrail(origin, 49, 11);
+
+            Assert.Equal(49, transit.Length);
+            for (int index = 0; index < transit.Length; index++)
+                Assert.Equal(AutonomousMiningSurveyPolicy.GetSite(origin, index, 11), transit[index]);
+            for (int index = 1; index < transit.Length; index++)
+                Assert.True(transit[index - 1].TotalDistance2D(transit[index]) <=
+                            AutonomousMiningSurveyPolicy.GetMaximumLegDistance(11));
+        }
+
+        [Fact]
+        public void ResupplyTransitPrefersPhysicallyReachedRouteAndRejectsInvalidData()
+        {
+            var origin = new Position(100, 200);
+            var reached = new[]
+            {
+                new Position(111, 200),
+                new Position(111, 211),
+                new Position(100, 211)
+            };
+
+            Assert.Equal(
+                reached,
+                AutonomousMiningSurveyPolicy.RestoreTransitRoute(origin, 20, 11, reached));
+
+            Position[] fallback = AutonomousMiningSurveyPolicy.RestoreTransitRoute(
+                origin,
+                2,
+                11,
+                new[] {new Position(double.NaN, 10)});
+            Assert.Equal(2, fallback.Length);
+            Assert.Equal(AutonomousMiningSurveyPolicy.GetSite(origin, 0, 11), fallback[0]);
+        }
+
+        [Fact]
+        public void SurveyRoutePersistenceRoundTripsOnlyCoordinates()
+        {
+            var route = new[]
+            {
+                new Position(10.25, 20.5),
+                new Position(30.75, 40.125)
+            };
+
+            string encoded = AutonomousSurveyRouteCodec.Serialize(route);
+
+            Assert.Equal(route, AutonomousSurveyRouteCodec.Deserialize(encoded));
+            Assert.Empty(AutonomousSurveyRouteCodec.Deserialize("not json"));
+            Assert.Null(AutonomousSurveyRouteCodec.Serialize(Array.Empty<Position>()));
+        }
+
+        [Fact]
         public void DockingRecoveryRotatesThroughDifferentApproachDirections()
         {
             Assert.Equal(4, AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, 0, 0));
@@ -125,6 +180,27 @@ namespace Perpetuum.Tests.Services.Autonomous
                 AutonomousDockingRecoveryPolicy.GetDirectionIndex(4, -1, 0));
             Assert.Throws<ArgumentOutOfRangeException>(() =>
                 AutonomousDockingRecoveryPolicy.GetDirectionIndex(16, 0, 0));
+        }
+
+        [Fact]
+        public void TerminalArcConnectsOppositeSpawnSidesWithoutCrossingTheBase()
+        {
+            var center = new Position(100, 100);
+            var start = center.OffsetInDirection(0, 30);
+            var target = center.OffsetInDirection(0.5, 24);
+
+            Position[] route = AutonomousTerminalArcPolicy.Build(center, start, target, 30, 18);
+
+            Assert.NotEmpty(route);
+            Assert.Equal(target, route[route.Length - 1]);
+            Position previous = start;
+            foreach (Position waypoint in route)
+            {
+                Assert.True(previous.TotalDistance2D(waypoint) <= 18.5);
+                if (waypoint != target)
+                    Assert.True(center.TotalDistance2D(waypoint) >= 29);
+                previous = waypoint;
+            }
         }
 
         [Fact]
