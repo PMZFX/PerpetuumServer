@@ -39,6 +39,9 @@ namespace Perpetuum.Services.Autonomous
 
             foreach (AutonomousActorDefinition actor in Actors)
             {
+                if (actor.RecoveryRevision < 0)
+                    throw new InvalidOperationException($"Autonomous recovery revision for character {actor.CharacterId} cannot be negative.");
+
                 if (string.Equals(actor.Behavior?.Trim(), "patrol", StringComparison.OrdinalIgnoreCase))
                 {
                     if (actor.Patrol == null)
@@ -58,6 +61,9 @@ namespace Perpetuum.Services.Autonomous
 
         [DefaultValue("idle"), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public string Behavior { get; set; } = "idle";
+
+        [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RecoveryRevision { get; set; }
 
         public AutonomousPatrolOptions Patrol { get; set; } = new AutonomousPatrolOptions();
     }

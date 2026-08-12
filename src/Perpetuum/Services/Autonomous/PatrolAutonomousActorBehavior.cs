@@ -40,8 +40,10 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousDamageMonitor _damageMonitor;
         private readonly ITargetLockActionService _targetLockActionService;
         private readonly IModuleActionService _moduleActionService;
+        private readonly IAutonomousActorStateStore _actorStateStore;
         private readonly IAutonomousActorAudit _audit;
         private AutonomousDefensiveEngagement _defense;
+        private AutonomousRobotRecoveryTracker _recoveryTracker;
         private PatrolState _state;
         private TimeSpan _stateElapsed;
         private Position _origin;
@@ -61,6 +63,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousDamageMonitor damageMonitor,
             ITargetLockActionService targetLockActionService,
             IModuleActionService moduleActionService,
+            IAutonomousActorStateStore actorStateStore,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
@@ -71,6 +74,7 @@ namespace Perpetuum.Services.Autonomous
             _damageMonitor = damageMonitor ?? throw new ArgumentNullException(nameof(damageMonitor));
             _targetLockActionService = targetLockActionService ?? throw new ArgumentNullException(nameof(targetLockActionService));
             _moduleActionService = moduleActionService ?? throw new ArgumentNullException(nameof(moduleActionService));
+            _actorStateStore = actorStateStore ?? throw new ArgumentNullException(nameof(actorStateStore));
             _audit = audit;
         }
 
@@ -89,11 +93,29 @@ namespace Perpetuum.Services.Autonomous
                 ? TimeSpan.FromSeconds(_definition.Patrol.DockedDwellSeconds)
                 : TimeSpan.Zero;
             _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
-            _expectedRobotEid = context.Actor.ActiveRobotEid;
+            _recoveryTracker = new AutonomousRobotRecoveryTracker(
+                context.Actor.Id,
+                Name,
+                _actorStateStore);
+            AutonomousRecoveryStartDisposition recoveryDisposition = _recoveryTracker.Start(
+                context.Actor.ActiveRobotEid,
+                _definition.RecoveryRevision);
+            _expectedRobotEid = _recoveryTracker.ExpectedRobotEid;
             _recoveringWorldEntry = !context.Actor.IsDocked;
             _retreatingFromThreat = false;
-            _robotRecoveryRequired = false;
+            _robotRecoveryRequired = _recoveryTracker.RecoveryRequired;
             _defenseLockOwned = false;
+
+            if (recoveryDisposition == AutonomousRecoveryStartDisposition.RecoveryRequired)
+            {
+                _audit.Write(context.Actor.Id, "patrol_recovery_required", AutonomousActorStatus.Active,
+                    _recoveryTracker.RecoveryReason);
+            }
+            else if (recoveryDisposition == AutonomousRecoveryStartDisposition.RecoveryAcknowledged)
+            {
+                _audit.Write(context.Actor.Id, "patrol_recovery_acknowledged", AutonomousActorStatus.Active,
+                    $"revision_{_definition.RecoveryRevision}");
+            }
         }
 
         public void Stop(GameActionContext context)
@@ -511,6 +533,12 @@ namespace Perpetuum.Services.Autonomous
 
         private bool HandleRobotRecovery(GameActionContext context, bool liveRobotDead)
         {
+            if (_robotRecoveryRequired)
+            {
+                _navigation.Stop(context);
+                return true;
+            }
+
             AutonomousRobotRecoveryReason reason = AutonomousRobotRecoveryPolicy.Assess(
                 _expectedRobotEid,
                 context.Actor.ActiveRobotEid,
@@ -522,7 +550,7 @@ namespace Perpetuum.Services.Autonomous
             _defense?.Reset();
             _defenseLockOwned = false;
             _navigation.Stop(context);
-            if (!_robotRecoveryRequired)
+            if (_recoveryTracker.RequireRecovery(reason, context.Actor.ActiveRobotEid))
             {
                 _robotRecoveryRequired = true;
                 _audit.Write(context.Actor.Id, "patrol_recovery_required", AutonomousActorStatus.Active,
