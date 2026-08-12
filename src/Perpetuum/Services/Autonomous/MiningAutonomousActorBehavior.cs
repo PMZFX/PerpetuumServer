@@ -131,7 +131,6 @@ namespace Perpetuum.Services.Autonomous
             _scanner = null;
             _observationBeforeScan = null;
             _scanAttempts = 0;
-            _surveySiteIndex = 0;
             _miningElapsed = TimeSpan.Zero;
             _cargoHoldAudited = false;
             _retreatingFromThreat = false;
@@ -141,6 +140,10 @@ namespace Perpetuum.Services.Autonomous
             _equipmentHoldAudited = false;
 
             AutonomousWorkState persisted = _workStateStore.Load(context.Actor.Id);
+            _surveySiteIndex = AutonomousMiningSurveyPolicy.SelectResumeSite(
+                _material,
+                options.MaxSurveySites,
+                persisted);
             AutonomousMiningResumeDirective resume = AutonomousMiningResumePolicy.Select(
                 context.Actor.IsDocked,
                 context.Actor.ZoneId,
@@ -230,7 +233,6 @@ namespace Perpetuum.Services.Autonomous
                 case MiningState.WaitingForWorld:
                     _origin = player.CurrentPosition;
                     _dockingBaseEid = context.Actor.CurrentDockingBaseEid;
-                    _surveySiteIndex = 0;
                     BeginScan(context);
                     break;
                 case MiningState.ResumingTarget:
@@ -444,6 +446,7 @@ namespace Perpetuum.Services.Autonomous
             {
                 if (tileResult.TryGetRichestLocation(out Point location, out uint amount))
                 {
+                    _surveySiteIndex = 0;
                     _target = new Position(location.X + 0.5, location.Y + 0.5);
                     _audit.Write(context.Actor.Id, "mining_scan_target", AutonomousActorStatus.Active,
                         $"x_{location.X}_y_{location.Y}_sample_{amount}");
@@ -481,8 +484,10 @@ namespace Perpetuum.Services.Autonomous
         {
             if (!_origin.HasValue || _surveySiteIndex >= _definition.Mining.MaxSurveySites)
             {
+                int surveyedSites = _surveySiteIndex;
+                _surveySiteIndex = 0;
                 _audit.Write(context.Actor.Id, "mining_survey_exhausted", AutonomousActorStatus.Active,
-                    $"sites_{_surveySiteIndex}");
+                    $"sites_{surveyedSites}");
                 BeginReturn(context, "survey_exhausted");
                 return;
             }
@@ -503,8 +508,10 @@ namespace Perpetuum.Services.Autonomous
                 return;
             }
 
+            int unreachableSites = _surveySiteIndex;
+            _surveySiteIndex = 0;
             _audit.Write(context.Actor.Id, "mining_survey_exhausted", AutonomousActorStatus.Active,
-                $"sites_{_surveySiteIndex}");
+                $"sites_{unreachableSites}");
             BeginReturn(context, "survey_unreachable");
         }
 
@@ -750,7 +757,8 @@ namespace Perpetuum.Services.Autonomous
                 context.Actor.ZoneId,
                 _origin,
                 _target,
-                _material));
+                _material,
+                _surveySiteIndex));
         }
     }
 }

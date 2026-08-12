@@ -91,7 +91,17 @@ namespace Perpetuum.Tests.Services.Autonomous
                 AutonomousMiningSurveyPolicy.GetSite(new Position(0, 0), 0, 0));
         }
 
-        private static AutonomousWorkState State(string phase, Position? target)
+        [Fact]
+        public void MatchingPersistedSurveyProgressSurvivesAResupplyTrip()
+        {
+            AutonomousWorkState state = State("Docked", null, 17);
+
+            Assert.Equal(17, AutonomousMiningSurveyPolicy.SelectResumeSite(MaterialType.Titan, 48, state));
+            Assert.Equal(0, AutonomousMiningSurveyPolicy.SelectResumeSite(MaterialType.Crude, 48, state));
+            Assert.Equal(0, AutonomousMiningSurveyPolicy.SelectResumeSite(MaterialType.Titan, 17, state));
+        }
+
+        private static AutonomousWorkState State(string phase, Position? target, int surveySiteIndex = 0)
         {
             return new AutonomousWorkState(
                 5,
@@ -101,7 +111,8 @@ namespace Perpetuum.Tests.Services.Autonomous
                 7,
                 new Position(10, 11),
                 target,
-                MaterialType.Titan);
+                MaterialType.Titan,
+                surveySiteIndex);
         }
     }
 }

@@ -18,12 +18,35 @@ BEGIN
         target_x FLOAT NULL,
         target_y FLOAT NULL,
         material_type INT NULL,
+        survey_site_index INT NOT NULL
+            CONSTRAINT DF_ai_actor_work_state_survey_site_index DEFAULT (0),
         updated_at DATETIME2(3) NOT NULL
             CONSTRAINT DF_ai_actor_work_state_updated_at DEFAULT (SYSUTCDATETIME()),
         row_version ROWVERSION NOT NULL,
         CONSTRAINT PK_ai_actor_work_state PRIMARY KEY CLUSTERED (character_id),
         CONSTRAINT CK_ai_actor_work_state_character_id CHECK (character_id > 0)
     );
+END;
+
+IF COL_LENGTH(N'dbo.ai_actor_work_state', N'survey_site_index') IS NULL
+BEGIN
+    ALTER TABLE dbo.ai_actor_work_state
+        ADD survey_site_index INT NOT NULL
+            CONSTRAINT DF_ai_actor_work_state_survey_site_index DEFAULT (0);
+END;
+GO
+
+IF NOT EXISTS
+(
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE parent_object_id = OBJECT_ID(N'dbo.ai_actor_work_state')
+      AND name = N'CK_ai_actor_work_state_survey_site_index'
+)
+BEGIN
+    ALTER TABLE dbo.ai_actor_work_state
+        ADD CONSTRAINT CK_ai_actor_work_state_survey_site_index
+            CHECK (survey_site_index >= 0);
 END;
 
 COMMIT TRANSACTION;

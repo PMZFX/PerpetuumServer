@@ -77,6 +77,23 @@ namespace Perpetuum.Services.Autonomous
 
     public static class AutonomousMiningSurveyPolicy
     {
+        public static int SelectResumeSite(
+            MaterialType configuredMaterial,
+            int maxSites,
+            AutonomousWorkState state)
+        {
+            if (maxSites < 0)
+                throw new ArgumentOutOfRangeException(nameof(maxSites));
+            if (state == null ||
+                !string.Equals(state.BehaviorName, "mining", StringComparison.OrdinalIgnoreCase) ||
+                state.MaterialType != configuredMaterial ||
+                state.SurveySiteIndex < 0 ||
+                state.SurveySiteIndex >= maxSites)
+                return 0;
+
+            return state.SurveySiteIndex;
+        }
+
         public static int GetRingCount(int siteCount)
         {
             if (siteCount < 0)
