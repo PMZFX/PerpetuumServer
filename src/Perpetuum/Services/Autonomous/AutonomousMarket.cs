@@ -8,18 +8,40 @@ namespace Perpetuum.Services.Autonomous
 {
     public sealed class AutonomousMarketQuote
     {
-        public AutonomousMarketQuote(long marketEid, int definition, double? bestBuyPrice, double? averagePrice)
+        public AutonomousMarketQuote(
+            long marketEid,
+            long dockingBaseEid,
+            int zoneId,
+            int definition,
+            double? bestBuyPrice,
+            int? bestBuyQuantity,
+            double? bestSellPrice,
+            int? bestSellQuantity,
+            double? averagePrice,
+            DateTime observedAtUtc)
         {
             MarketEid = marketEid;
+            DockingBaseEid = dockingBaseEid;
+            ZoneId = zoneId;
             Definition = definition;
             BestBuyPrice = bestBuyPrice;
+            BestBuyQuantity = bestBuyQuantity;
+            BestSellPrice = bestSellPrice;
+            BestSellQuantity = bestSellQuantity;
             AveragePrice = averagePrice;
+            ObservedAtUtc = observedAtUtc;
         }
 
         public long MarketEid { get; }
+        public long DockingBaseEid { get; }
+        public int ZoneId { get; }
         public int Definition { get; }
         public double? BestBuyPrice { get; }
+        public int? BestBuyQuantity { get; }
+        public double? BestSellPrice { get; }
+        public int? BestSellQuantity { get; }
         public double? AveragePrice { get; }
+        public DateTime ObservedAtUtc { get; }
     }
 
     public interface IAutonomousMarketObservationService
@@ -55,12 +77,25 @@ namespace Perpetuum.Services.Autonomous
                 context.Actor.Eid,
                 market,
                 context.Actor.CorporationEid);
+            MarketOrder bestSell = _orders.GetLowestSellOrder(
+                definition,
+                double.MaxValue,
+                context.Actor.Eid,
+                market,
+                context.Actor.CorporationEid);
             MarketAveragePriceEntry average = _marketHandler.GetAveragePriceByMarket(market, definition);
+            var dockingBase = market.GetDockingBase();
             return new AutonomousMarketQuote(
                 market.Eid,
+                dockingBase.Eid,
+                dockingBase.Zone.Id,
                 definition,
                 Positive(bestBuy?.price),
-                Positive(average?.AveragePrice));
+                PositiveQuantity(bestBuy?.quantity),
+                Positive(bestSell?.price),
+                PositiveQuantity(bestSell?.quantity),
+                Positive(average?.AveragePrice),
+                DateTime.UtcNow);
         }
 
         private static double? Positive(double? value)
@@ -69,6 +104,11 @@ namespace Perpetuum.Services.Autonomous
                    !double.IsNaN(value.Value) && !double.IsInfinity(value.Value)
                 ? value
                 : null;
+        }
+
+        private static int? PositiveQuantity(int? value)
+        {
+            return value.HasValue && value.Value > 0 ? value : null;
         }
     }
 

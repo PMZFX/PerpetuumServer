@@ -220,6 +220,19 @@ zone entry, while retaining recovery if entry genuinely fails. Career policy
 still chooses the economic destination and decides how to handle a reported
 unavailable, blocked, or timed-out route.
 
+Regional price knowledge is also actor-local and observation-driven. While
+docked, a behavior may remember the local market identity, base and zone,
+lowest eligible sell order, highest eligible buy order, visible quantities,
+and local trade average for configured definitions. The bot cannot refresh or
+query another market remotely through this service. Trade planning rejects
+expired observations and same-zone pairs, then bounds a prospective batch by
+the remembered source and destination depth, wallet budget, robot free volume,
+and a configured maximum. The result is only an expected gross opportunity;
+execution must travel normally and re-observe the source offer before spending
+NIC. Each character has separate memory in `dbo.ai_market_memory`, created by
+`database/overlays/004_ai_market_memory.sql`; corporation knowledge sharing is
+a later explicit social policy rather than an implicit global cache.
+
 Patrol requires the project database overlay that creates
 `dbo.ai_actor_state`. It durably records the expected robot. If that robot is
 destroyed, removed, or replaced, navigation stops and a recovery audit event is

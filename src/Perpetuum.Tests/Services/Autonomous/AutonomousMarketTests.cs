@@ -1,3 +1,4 @@
+using System;
 using Perpetuum.Services.Autonomous;
 using Xunit;
 
@@ -60,6 +61,108 @@ namespace Perpetuum.Tests.Services.Autonomous
                 true));
         }
 
+        [Fact]
+        public void RegionalPlanIsBoundedByBudgetCargoAndVisibleOrderDepth()
+        {
+            DateTime now = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+            var plan = AutonomousRegionalTradePolicy.Select(
+                1,
+                new[]
+                {
+                    Memory(1, 10, 100, 1, 700, sell: 10, sellQuantity: 100, observed: now),
+                    Memory(1, 20, 200, 2, 700, buy: 15, buyQuantity: 6, observed: now),
+                    Memory(1, 30, 300, 3, 700, buy: 16, buyQuantity: 2, observed: now)
+                },
+                new[] {new AutonomousTradeCommodity(700, 2)},
+                now,
+                TimeSpan.FromHours(2),
+                1,
+                0.1,
+                50,
+                100,
+                10);
+
+            Assert.NotNull(plan);
+            Assert.Equal(20, plan.Destination.MarketEid);
+            Assert.Equal(5, plan.Quantity);
+            Assert.Equal(50, plan.ExpectedCost);
+            Assert.Equal(75, plan.ExpectedRevenue);
+        }
+
+        [Fact]
+        public void RegionalPlanRejectsStaleAndSameZoneKnowledge()
+        {
+            DateTime now = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+            var memories = new[]
+            {
+                Memory(1, 10, 100, 1, 700, sell: 10, sellQuantity: 10, observed: now),
+                Memory(1, 20, 200, 1, 700, buy: 20, buyQuantity: 10, observed: now),
+                Memory(1, 30, 300, 3, 700, buy: 30, buyQuantity: 10,
+                    observed: now - TimeSpan.FromHours(3))
+            };
+
+            Assert.Null(AutonomousRegionalTradePolicy.Select(
+                1,
+                memories,
+                new[] {new AutonomousTradeCommodity(700, 1)},
+                now,
+                TimeSpan.FromHours(2),
+                1,
+                0.1,
+                10,
+                1000,
+                100));
+        }
+
+        [Fact]
+        public void RegionalPlanNeverCombinesDifferentActorsMemories()
+        {
+            DateTime now = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+
+            Assert.Null(AutonomousRegionalTradePolicy.Select(
+                1,
+                new[]
+                {
+                    Memory(1, 10, 100, 1, 700, sell: 10, sellQuantity: 10, observed: now),
+                    Memory(2, 20, 200, 2, 700, buy: 20, buyQuantity: 10, observed: now)
+                },
+                new[] {new AutonomousTradeCommodity(700, 1)},
+                now,
+                TimeSpan.FromHours(2),
+                1,
+                0.1,
+                10,
+                1000,
+                100));
+        }
+
+        [Fact]
+        public void MarketMemoryCopiesOnlyTheObservedLocalQuote()
+        {
+            DateTime observed = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+            var quote = new AutonomousMarketQuote(
+                10,
+                100,
+                1,
+                700,
+                15,
+                6,
+                10,
+                8,
+                12,
+                observed);
+
+            AutonomousMarketMemory memory = AutonomousMarketMemory.FromQuote(4, quote);
+
+            Assert.Equal(4, memory.CharacterId);
+            Assert.Equal(10, memory.MarketEid);
+            Assert.Equal(100, memory.DockingBaseEid);
+            Assert.Equal(1, memory.ZoneId);
+            Assert.Equal(observed, memory.ObservedAtUtc);
+            Assert.Equal(6, memory.BestBuyQuantity);
+            Assert.Equal(8, memory.BestSellQuantity);
+        }
+
         private static AutonomousCargoSnapshot Cargo(params AutonomousCargoItemSnapshot[] items)
         {
             return new AutonomousCargoSnapshot(500, 100, 50, items);
@@ -68,6 +171,32 @@ namespace Perpetuum.Tests.Services.Autonomous
         private static AutonomousCargoItemSnapshot Item(long eid, int definition, bool rawMaterial)
         {
             return new AutonomousCargoItemSnapshot(eid, definition, 5, 1, rawMaterial);
+        }
+
+        private static AutonomousMarketMemory Memory(
+            int characterId,
+            long marketEid,
+            long dockingBaseEid,
+            int zoneId,
+            int definition,
+            double? buy = null,
+            int? buyQuantity = null,
+            double? sell = null,
+            int? sellQuantity = null,
+            DateTime? observed = null)
+        {
+            return new AutonomousMarketMemory(
+                characterId,
+                marketEid,
+                dockingBaseEid,
+                zoneId,
+                definition,
+                buy,
+                buyQuantity,
+                sell,
+                sellQuantity,
+                null,
+                observed ?? DateTime.UtcNow);
         }
     }
 }
