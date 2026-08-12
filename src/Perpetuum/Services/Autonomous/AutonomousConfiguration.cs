@@ -106,6 +106,8 @@ namespace Perpetuum.Services.Autonomous
 
         public AutonomousThreatOptions Threat { get; set; } = new AutonomousThreatOptions();
 
+        public AutonomousMarketOptions Market { get; set; } = new AutonomousMarketOptions();
+
         public MaterialType GetMaterialType()
         {
             return Enum.TryParse(Material, true, out MaterialType materialType)
@@ -135,6 +137,42 @@ namespace Perpetuum.Services.Autonomous
             if (Threat == null)
                 throw new InvalidOperationException($"Autonomous mining threat options for character {characterId} cannot be null.");
             Threat.Validate(characterId);
+            if (Market == null)
+                throw new InvalidOperationException($"Autonomous mining market options for character {characterId} cannot be null.");
+            Market.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousMarketOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(true), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool SellAllRawMaterials { get; set; } = true;
+
+        [DefaultValue(1.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MinimumUnitPrice { get; set; } = 1.0;
+
+        [DefaultValue(0.98), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double ListPriceFactor { get; set; } = 0.98;
+
+        [DefaultValue(24), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int OrderDurationHours { get; set; } = 24;
+
+        [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RetrySeconds { get; set; } = 60;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(MinimumUnitPrice) || double.IsInfinity(MinimumUnitPrice) || MinimumUnitPrice <= 0)
+                throw new InvalidOperationException($"Autonomous market minimum unit price for character {characterId} must be greater than zero.");
+            if (double.IsNaN(ListPriceFactor) || double.IsInfinity(ListPriceFactor) || ListPriceFactor < 0.1 || ListPriceFactor > 2.0)
+                throw new InvalidOperationException($"Autonomous market list price factor for character {characterId} must be between 0.1 and 2.0.");
+            if (OrderDurationHours < 1 || OrderDurationHours > 720)
+                throw new InvalidOperationException($"Autonomous market order duration for character {characterId} must be between 1 and 720 hours.");
+            if (RetrySeconds < 5 || RetrySeconds > 3600)
+                throw new InvalidOperationException($"Autonomous market retry for character {characterId} must be between 5 and 3600 seconds.");
         }
     }
 

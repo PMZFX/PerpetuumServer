@@ -1639,6 +1639,10 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousMiningEquipmentService>();
             _ = _builder.RegisterType<AutonomousCargoService>()
                 .As<IAutonomousCargoService>();
+            _ = _builder.RegisterType<AutonomousMarketObservationService>()
+                .As<IAutonomousMarketObservationService>();
+            _ = _builder.RegisterType<AutonomousCargoDispositionService>()
+                .As<IAutonomousCargoDispositionService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("patrol");
             _ = _builder.RegisterType<MiningAutonomousActorBehavior>()
