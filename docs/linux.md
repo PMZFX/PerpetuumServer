@@ -226,6 +226,52 @@ lost or the limit expires, then waits for normal aggression and docking rules.
 This feature does not choose targets proactively, create ammunition, repair the
 robot, or replace a destroyed robot.
 
+The first economic field behavior is opt-in as `mining`. It currently covers
+deploy, scan, travel, lock, drill, return, and dock. The active robot must
+already have a tile geoscanner and mining turret fitted with loaded ammunition
+for the configured material.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "mining",
+  "RecoveryRevision": 0,
+  "Mining": {
+    "Material": "Titan",
+    "Throttle": 0.45,
+    "CargoFillRatio": 0.75,
+    "DockedDwellSeconds": 15,
+    "ScanTimeoutSeconds": 10,
+    "LockTimeoutSeconds": 8,
+    "MaxMiningSeconds": 300,
+    "MaxScanAttempts": 3,
+    "Threat": {
+      "Enabled": true,
+      "ResponseRange": 35.0,
+      "DockedDwellSeconds": 60
+    }
+  }
+}
+```
+
+The behavior cannot inspect mineral layers. Its target comes from the exact
+noisy tile grid produced by a fitted scanner and sent to the game client.
+Equipment selection sees only the robot fitting and loaded ammunition; cargo
+decisions see only the active robot's own inventory and capacity. Scanner
+probes and mining charges are consumed through the normal module state machine.
+
+Mining progress requires `dbo.ai_actor_work_state`, created by
+`database/overlays/002_ai_actor_work_state.sql`. Each transition records the
+base, zone, return origin, observed target, and material. A restart resumes a
+target only when those facts still match; otherwise the actor discards stale
+coordinates and uses normal base recovery. The separate `dbo.ai_actor_state`
+robot identity guard remains authoritative.
+
+Until store-and-sell is enabled, a docked miner at or above `CargoFillRatio`
+stays docked and emits `mining_cargo_ready`. It does not discard ore or bypass
+player inventory and market actions.
+
 Stop with enough time for zone-layer persistence:
 
 ```bash

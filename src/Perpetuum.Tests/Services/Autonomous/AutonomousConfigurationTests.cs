@@ -1,5 +1,6 @@
 using System;
 using Perpetuum.Services.Autonomous;
+using Perpetuum.Zones.Terrains.Materials;
 using Xunit;
 
 namespace Perpetuum.Tests.Services.Autonomous
@@ -133,6 +134,39 @@ namespace Perpetuum.Tests.Services.Autonomous
                 Actors =
                 {
                     new AutonomousActorDefinition { CharacterId = 10, RecoveryRevision = -1 }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
+        [Fact]
+        public void MiningMaterialIsHumanReadableAndValidated()
+        {
+            var options = new AutonomousMiningOptions { Material = "titan" };
+
+            options.Validate(12);
+
+            Assert.Equal(MaterialType.Titan, options.GetMaterialType());
+            options.Material = "not-a-mineral";
+            Assert.Throws<InvalidOperationException>(() => options.Validate(12));
+        }
+
+        [Theory]
+        [InlineData(0.0)]
+        [InlineData(1.01)]
+        public void InvalidMiningCargoThresholdIsRejected(double threshold)
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors =
+                {
+                    new AutonomousActorDefinition
+                    {
+                        CharacterId = 12,
+                        Behavior = "mining",
+                        Mining = new AutonomousMiningOptions { CargoFillRatio = threshold }
+                    }
                 }
             };
 
