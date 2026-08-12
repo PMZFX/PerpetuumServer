@@ -52,7 +52,6 @@ namespace Perpetuum.Services.Autonomous
     {
         private const double LegDistance = 36;
         private const int MaximumLegsPerHop = 1024;
-        private const int MaximumLegAttempts = 9;
         private static readonly TimeSpan ZoneTransitionTimeout = TimeSpan.FromSeconds(20);
 
         private readonly IAutonomousTeleportNetworkService _network;
@@ -81,7 +80,7 @@ namespace Perpetuum.Services.Autonomous
         {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
-            if (targetZoneId <= 0)
+            if (targetZoneId < 0)
                 throw new ArgumentOutOfRangeException(nameof(targetZoneId));
             if (double.IsNaN(throttle) || double.IsInfinity(throttle) || throttle <= 0 || throttle > 1)
                 throw new ArgumentOutOfRangeException(nameof(throttle));
@@ -145,9 +144,10 @@ namespace Perpetuum.Services.Autonomous
                 return true;
             }
 
-            IReadOnlyList<AutonomousTeleportLink> route = AutonomousTeleportRoutePolicy.FindRoute(
+            IReadOnlyList<AutonomousTeleportLink> route = AutonomousTeleportRoutePolicy.FindRouteFromPosition(
                 player.Zone.Id,
                 TargetZoneId,
+                player.CurrentPosition,
                 _network.Observe());
             if (route.Count == 0)
             {
@@ -184,7 +184,7 @@ namespace Perpetuum.Services.Autonomous
                 return false;
             }
 
-            while (_legAttempt < MaximumLegAttempts)
+            while (_legAttempt < AutonomousWorldTravelLegPolicy.CandidateCount)
             {
                 Position approach = AutonomousWorldTravelLegPolicy.GetApproachPosition(
                     player.CurrentPosition,
@@ -274,6 +274,8 @@ namespace Perpetuum.Services.Autonomous
 
     public static class AutonomousWorldTravelLegPolicy
     {
+        private static readonly double[] DistanceScales = {1, 2.0 / 3, 1.0 / 3};
+
         private static readonly double[] DirectionOffsets =
         {
             0,
@@ -284,8 +286,17 @@ namespace Perpetuum.Services.Autonomous
             3.0 / 16,
             -3.0 / 16,
             4.0 / 16,
-            -4.0 / 16
+            -4.0 / 16,
+            5.0 / 16,
+            -5.0 / 16,
+            6.0 / 16,
+            -6.0 / 16,
+            7.0 / 16,
+            -7.0 / 16,
+            8.0 / 16
         };
+
+        public static int CandidateCount => DirectionOffsets.Length * DistanceScales.Length;
 
         /// <summary>
         /// Stops short of an occupied world object while remaining safely
@@ -320,15 +331,19 @@ namespace Perpetuum.Services.Autonomous
             if (double.IsNaN(legDistance) || double.IsInfinity(legDistance) ||
                 legDistance <= 0 || legDistance > AutonomousNavigationService.MaximumStartDistance)
                 throw new ArgumentOutOfRangeException(nameof(legDistance));
-            if (attempt < 0 || attempt >= DirectionOffsets.Length)
+            if (attempt < 0 || attempt >= CandidateCount)
                 throw new ArgumentOutOfRangeException(nameof(attempt));
 
             double remaining = current.TotalDistance2D(destination);
             if (attempt == 0 && remaining <= legDistance)
                 return destination;
 
-            double distance = Math.Min(legDistance, Math.Max(6, remaining * 0.75));
-            double direction = NormalizeDirection(current.DirectionTo(destination) + DirectionOffsets[attempt]);
+            int directionIndex = attempt % DirectionOffsets.Length;
+            int distanceIndex = attempt / DirectionOffsets.Length;
+            double fullDistance = Math.Min(legDistance, Math.Max(6, remaining * 0.75));
+            double distance = Math.Max(6, fullDistance * DistanceScales[distanceIndex]);
+            double direction = NormalizeDirection(
+                current.DirectionTo(destination) + DirectionOffsets[directionIndex]);
             return current.OffsetInDirection(direction, distance).Center;
         }
 

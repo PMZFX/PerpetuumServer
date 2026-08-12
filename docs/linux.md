@@ -233,6 +233,62 @@ NIC. Each character has separate memory in `dbo.ai_market_memory`, created by
 `database/overlays/004_ai_market_memory.sql`; corporation knowledge sharing is
 a later explicit social policy rather than an implicit global cache.
 
+The first regional executor is separately opt-in as `trader`. Its configured
+market base EIDs are explicit route knowledge, analogous to destinations a
+player has chosen to visit; they do not reveal prices. Commodity values are
+entity-default names, not numeric server internals. Apply
+`database/overlays/005_ai_trade_state.sql` before enabling it. The overlay
+creates durable shipment state and updates the earlier market-memory location
+constraint so zone ID `0`, which is valid in P31, can be observed. A minimal
+shape is:
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "trader",
+  "RecoveryRevision": 0,
+  "Trader": {
+    "Throttle": 0.45,
+    "DockedDwellSeconds": 10,
+    "MaximumObservationAgeMinutes": 120,
+    "MinimumUnitProfit": 1.0,
+    "MinimumMargin": 0.05,
+    "MaximumQuantity": 100,
+    "WalletReserve": 10000.0,
+    "OrderDurationHours": 24,
+    "MarketBaseEids": [111111, 222222],
+    "Commodities": ["def_titan"]
+  }
+}
+```
+
+The trader visits the least-recently observed configured market through normal
+undock, movement, public teleport, approach, and dock actions. At each terminal
+it records only the local order books for its configured commodities. Once its
+own fresh observations reveal a cross-zone opportunity, it returns to the
+source and refreshes that offer before spending NIC. Quantity is bounded again
+by the live sell order and robot capacity; `WalletReserve` is excluded from its
+planning budget.
+
+A successful purchase lands in the public terminal container and is relocated
+into the active robot exactly as for a player. Purchase, relocation, and the
+new `dbo.ai_trade_state` row are committed in one ambient transaction. The row
+stores the remaining quantity, actual unit cost, and source and destination;
+after a restart or human-session suspension, the same shipment remains the
+actor's priority. At the destination the bot refreshes the local quote and
+either fulfills an eligible best bid or creates a normal sell order at the
+higher of its absolute-profit and margin floors. Sale/listing and durable
+quantity reduction are likewise one transaction, preventing replay after a
+restart. Normal credit, fees, order slots, ownership, saleability, cargo loss,
+teleport restrictions, terrain, collision, speed, docking range, and robot
+recovery remain authoritative.
+
+The initial executor carries one shipment at a time. It does not share market
+memory, cancel old orders, respond tactically to threats, or manufacture an
+unprofitable route. Those are later career and corporation policies, not
+privileges hidden in transport.
+
 Patrol requires the project database overlay that creates
 `dbo.ai_actor_state`. It durably records the expected robot. If that robot is
 destroyed, removed, or replaced, navigation stops and a recovery audit event is

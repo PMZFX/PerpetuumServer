@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Perpetuum.Services.Autonomous;
 using Xunit;
 
@@ -161,6 +162,57 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(observed, memory.ObservedAtUtc);
             Assert.Equal(6, memory.BestBuyQuantity);
             Assert.Equal(8, memory.BestSellQuantity);
+        }
+
+        [Fact]
+        public void ShipmentSaleFloorPreservesBothAbsoluteAndMarginRequirements()
+        {
+            Assert.Equal(12, AutonomousTradeSalePolicy.GetMinimumUnitPrice(10, 2, 0.1));
+            Assert.Equal(15, AutonomousTradeSalePolicy.GetMinimumUnitPrice(10, 1, 0.5));
+        }
+
+        [Fact]
+        public void MarketSurveyVisitsMissingThenOldestObservation()
+        {
+            DateTime now = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+            var memories = new[]
+            {
+                Memory(1, 10, 100, 1, 700, observed: now),
+                Memory(1, 20, 200, 2, 700, observed: now - TimeSpan.FromHours(2)),
+                Memory(1, 21, 200, 2, 701, observed: now - TimeSpan.FromHours(1)),
+                Memory(1, 30, 300, 3, 700, observed: now - TimeSpan.FromHours(3))
+            };
+
+            Assert.Equal(300, AutonomousMarketSurveyPolicy.SelectNextBase(
+                new long[] {100, 200, 300},
+                new[] {700, 701},
+                memories,
+                100));
+
+            AutonomousMarketMemory[] complete = memories
+                .Append(Memory(1, 30, 300, 3, 700, observed: now))
+                .Append(Memory(1, 31, 300, 3, 701, observed: now - TimeSpan.FromMinutes(30)))
+                .ToArray();
+            Assert.Equal(200, AutonomousMarketSurveyPolicy.SelectNextBase(
+                new long[] {100, 200, 300},
+                new[] {700, 701},
+                complete,
+                100));
+        }
+
+        [Fact]
+        public void DurableShipmentRetainsDestinationWhileQuantityChanges()
+        {
+            DateTime acquired = new DateTime(2026, 8, 12, 19, 30, 0, DateTimeKind.Utc);
+            var state = new AutonomousTradeState(
+                4, 700, 10, 12, 10, 100, 1, 20, 200, 2, acquired);
+
+            AutonomousTradeState remaining = state.WithRemainingQuantity(3);
+
+            Assert.Equal(3, remaining.QuantityRemaining);
+            Assert.Equal(200, remaining.DestinationBaseEid);
+            Assert.Equal(12, remaining.UnitCost);
+            Assert.Equal(acquired, remaining.AcquiredAtUtc);
         }
 
         private static AutonomousCargoSnapshot Cargo(params AutonomousCargoItemSnapshot[] items)

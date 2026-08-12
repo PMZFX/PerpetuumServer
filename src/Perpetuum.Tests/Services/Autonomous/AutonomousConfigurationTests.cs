@@ -221,6 +221,39 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => options.Validate(12));
         }
 
+        [Fact]
+        public void TraderRequiresExplicitRegionalMarketsAndCommodities()
+        {
+            var definition = new AutonomousActorDefinition
+            {
+                CharacterId = 20,
+                Behavior = "trader"
+            };
+            var configuration = new AutonomousConfiguration { Actors = {definition} };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            definition.Trader.MarketBaseEids.AddRange(new long[] {100, 200});
+            definition.Trader.Commodities.Add("titan");
+            configuration.Validate();
+        }
+
+        [Fact]
+        public void TraderRejectsDuplicateMarketsAndUnsafeBudgetPolicy()
+        {
+            var options = new AutonomousTraderOptions
+            {
+                MarketBaseEids = new System.Collections.Generic.List<long> {100, 100},
+                Commodities = new System.Collections.Generic.List<string> {"titan"}
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(20));
+
+            options.MarketBaseEids[1] = 200;
+            options.WalletReserve = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(20));
+        }
+
         [Theory]
         [InlineData(1, 48)]
         [InlineData(18, 129)]

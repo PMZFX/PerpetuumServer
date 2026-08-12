@@ -45,9 +45,9 @@ namespace Perpetuum.Services.Autonomous
         public bool IsUsableForWorldRoute =>
             DescriptionId > 0 &&
             SourceTeleportEid > 0 &&
-            SourceZoneId > 0 &&
+            SourceZoneId >= 0 &&
             SourceRange > 0 &&
-            TargetZoneId > 0 &&
+            TargetZoneId >= 0 &&
             SourceZoneId != TargetZoneId &&
             Type == TeleportDescriptionType.AnotherZone &&
             Active &&
@@ -104,9 +104,32 @@ namespace Perpetuum.Services.Autonomous
             int targetZoneId,
             IEnumerable<AutonomousTeleportLink> links)
         {
-            if (sourceZoneId <= 0)
+            return FindRouteCore(sourceZoneId, targetZoneId, links, null);
+        }
+
+        /// <summary>
+        /// Preserves shortest-hop routing while preferring the closest first
+        /// public exit when several choices reach the same zone route depth.
+        /// Later hops remain deterministic by description ID.
+        /// </summary>
+        public static IReadOnlyList<AutonomousTeleportLink> FindRouteFromPosition(
+            int sourceZoneId,
+            int targetZoneId,
+            Position sourcePosition,
+            IEnumerable<AutonomousTeleportLink> links)
+        {
+            return FindRouteCore(sourceZoneId, targetZoneId, links, sourcePosition);
+        }
+
+        private static IReadOnlyList<AutonomousTeleportLink> FindRouteCore(
+            int sourceZoneId,
+            int targetZoneId,
+            IEnumerable<AutonomousTeleportLink> links,
+            Position? sourcePosition)
+        {
+            if (sourceZoneId < 0)
                 throw new ArgumentOutOfRangeException(nameof(sourceZoneId));
-            if (targetZoneId <= 0)
+            if (targetZoneId < 0)
                 throw new ArgumentOutOfRangeException(nameof(targetZoneId));
             if (links == null)
                 throw new ArgumentNullException(nameof(links));
@@ -124,8 +147,16 @@ namespace Perpetuum.Services.Autonomous
             while (queue.Count > 0)
             {
                 RouteNode current = queue.Dequeue();
-                foreach (AutonomousTeleportLink link in usable.Where(candidate =>
-                             candidate.SourceZoneId == current.ZoneId))
+                IEnumerable<AutonomousTeleportLink> outgoing = usable.Where(candidate =>
+                    candidate.SourceZoneId == current.ZoneId);
+                if (sourcePosition.HasValue && current.Route.Count == 0)
+                {
+                    outgoing = outgoing
+                        .OrderBy(link => sourcePosition.Value.TotalDistance2D(link.SourcePosition))
+                        .ThenBy(link => link.DescriptionId);
+                }
+
+                foreach (AutonomousTeleportLink link in outgoing)
                 {
                     if (!visited.Add(link.TargetZoneId))
                         continue;

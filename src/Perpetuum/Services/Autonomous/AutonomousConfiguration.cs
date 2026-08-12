@@ -56,6 +56,13 @@ namespace Perpetuum.Services.Autonomous
                         throw new InvalidOperationException($"Autonomous mining options for character {actor.CharacterId} cannot be null.");
                     actor.Mining.Validate(actor.CharacterId);
                 }
+
+                if (string.Equals(actor.Behavior?.Trim(), "trader", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Trader == null)
+                        throw new InvalidOperationException($"Autonomous trader options for character {actor.CharacterId} cannot be null.");
+                    actor.Trader.Validate(actor.CharacterId);
+                }
             }
         }
     }
@@ -76,6 +83,66 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousPatrolOptions Patrol { get; set; } = new AutonomousPatrolOptions();
 
         public AutonomousMiningOptions Mining { get; set; } = new AutonomousMiningOptions();
+
+        public AutonomousTraderOptions Trader { get; set; } = new AutonomousTraderOptions();
+    }
+
+    public sealed class AutonomousTraderOptions
+    {
+        [DefaultValue(0.45), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double Throttle { get; set; } = 0.45;
+
+        [DefaultValue(10), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int DockedDwellSeconds { get; set; } = 10;
+
+        [DefaultValue(120), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumObservationAgeMinutes { get; set; } = 120;
+
+        [DefaultValue(1.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MinimumUnitProfit { get; set; } = 1.0;
+
+        [DefaultValue(0.05), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MinimumMargin { get; set; } = 0.05;
+
+        [DefaultValue(100), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumQuantity { get; set; } = 100;
+
+        [DefaultValue(10000.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double WalletReserve { get; set; } = 10000.0;
+
+        [DefaultValue(24), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int OrderDurationHours { get; set; } = 24;
+
+        public List<long> MarketBaseEids { get; set; } = new List<long>();
+
+        public List<string> Commodities { get; set; } = new List<string>();
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(Throttle) || double.IsInfinity(Throttle) || Throttle < 0.1 || Throttle > 1.0)
+                throw new InvalidOperationException($"Autonomous trader throttle for character {characterId} must be between 0.1 and 1.0.");
+            if (DockedDwellSeconds < 0 || DockedDwellSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous trader docked dwell for character {characterId} must be between 0 and 3600 seconds.");
+            if (MaximumObservationAgeMinutes < 1 || MaximumObservationAgeMinutes > 10080)
+                throw new InvalidOperationException($"Autonomous trader observation age for character {characterId} must be between 1 and 10080 minutes.");
+            if (double.IsNaN(MinimumUnitProfit) || double.IsInfinity(MinimumUnitProfit) || MinimumUnitProfit < 0)
+                throw new InvalidOperationException($"Autonomous trader minimum unit profit for character {characterId} cannot be negative.");
+            if (double.IsNaN(MinimumMargin) || double.IsInfinity(MinimumMargin) || MinimumMargin < 0 || MinimumMargin > 10)
+                throw new InvalidOperationException($"Autonomous trader minimum margin for character {characterId} must be between 0 and 10.");
+            if (MaximumQuantity < 1 || MaximumQuantity > 100000)
+                throw new InvalidOperationException($"Autonomous trader maximum quantity for character {characterId} must be between 1 and 100000.");
+            if (double.IsNaN(WalletReserve) || double.IsInfinity(WalletReserve) || WalletReserve < 0)
+                throw new InvalidOperationException($"Autonomous trader wallet reserve for character {characterId} cannot be negative.");
+            if (OrderDurationHours < 1 || OrderDurationHours > 720)
+                throw new InvalidOperationException($"Autonomous trader order duration for character {characterId} must be between 1 and 720 hours.");
+            if (MarketBaseEids == null || MarketBaseEids.Count < 2 ||
+                MarketBaseEids.Any(eid => eid <= 0) || MarketBaseEids.Distinct().Count() != MarketBaseEids.Count)
+                throw new InvalidOperationException($"Autonomous trader for character {characterId} requires at least two distinct positive market base EIDs.");
+            if (Commodities == null || Commodities.Count == 0 ||
+                Commodities.Any(name => string.IsNullOrWhiteSpace(name)) ||
+                Commodities.Select(name => name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Count() != Commodities.Count)
+                throw new InvalidOperationException($"Autonomous trader for character {characterId} requires distinct commodity definition names.");
+        }
     }
 
     public sealed class AutonomousMiningOptions
