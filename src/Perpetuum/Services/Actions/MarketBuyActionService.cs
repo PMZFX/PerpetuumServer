@@ -9,16 +9,22 @@ namespace Perpetuum.Services.Actions
 {
     public sealed class MarketBuyAction
     {
-        public MarketBuyAction(int marketItemId, bool useCorporationWallet, int quantity)
+        public MarketBuyAction(
+            int marketItemId,
+            bool useCorporationWallet,
+            int quantity,
+            double? maximumUnitPrice = null)
         {
             MarketItemId = marketItemId;
             UseCorporationWallet = useCorporationWallet;
             Quantity = quantity;
+            MaximumUnitPrice = maximumUnitPrice;
         }
 
         public int MarketItemId { get; }
         public bool UseCorporationWallet { get; }
         public int Quantity { get; }
+        public double? MaximumUnitPrice { get; }
     }
 
     public sealed class MarketBuyResult
@@ -86,11 +92,22 @@ namespace Perpetuum.Services.Actions
                 var buyer = context.Actor;
 
                 action.Quantity.ThrowIfLessOrEqual(0, ErrorCodes.WTFErrorMedicalAttentionSuggested);
+                if (action.MaximumUnitPrice.HasValue &&
+                    (double.IsNaN(action.MaximumUnitPrice.Value) ||
+                     double.IsInfinity(action.MaximumUnitPrice.Value)))
+                    throw new PerpetuumException(ErrorCodes.IllegalMarketPrice);
+                if (action.MaximumUnitPrice.HasValue)
+                    action.MaximumUnitPrice.Value.ThrowIfLessOrEqual(0, ErrorCodes.IllegalMarketPrice);
                 buyer.IsDocked.ThrowIfFalse(ErrorCodes.CharacterHasToBeDocked);
                 buyer.CheckPrivilegedTransactionsAndThrowIfFailed();
 
                 var market = buyer.GetCurrentDockingBase().GetMarketOrThrow();
                 var sellOrder = _marketOrderRepository.Get(action.MarketItemId).ThrowIfNull(ErrorCodes.ItemNotFound);
+
+                sellOrder.isSell.ThrowIfFalse(ErrorCodes.ItemNotFound);
+                sellOrder.marketEID.ThrowIfNotEqual(market.Eid, ErrorCodes.ItemNotFound);
+                if (action.MaximumUnitPrice.HasValue)
+                    sellOrder.price.ThrowIfGreater(action.MaximumUnitPrice.Value, ErrorCodes.IllegalMarketPrice);
 
                 sellOrder.submitterEID.ThrowIfEqual(buyer.Eid, ErrorCodes.CannotBuyFromYourself);
 

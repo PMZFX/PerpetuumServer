@@ -172,6 +172,21 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int RetrySeconds { get; set; } = 60;
 
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool BuyFromMarket { get; set; }
+
+        [DefaultValue(64), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int TileProbeReserve { get; set; } = 64;
+
+        [DefaultValue(500), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MiningChargeReserve { get; set; } = 500;
+
+        [DefaultValue(500), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumPurchaseQuantity { get; set; } = 500;
+
+        [DefaultValue(0.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MaximumUnitPrice { get; set; }
+
         public void Validate(int characterId)
         {
             if (double.IsNaN(ReloadBelowRatio) || double.IsInfinity(ReloadBelowRatio) ||
@@ -179,6 +194,16 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous mining reload ratio for character {characterId} must be greater than zero and at most 1.0.");
             if (RetrySeconds < 5 || RetrySeconds > 3600)
                 throw new InvalidOperationException($"Autonomous mining resupply retry for character {characterId} must be between 5 and 3600 seconds.");
+            if (TileProbeReserve < 0 || TileProbeReserve > 100000)
+                throw new InvalidOperationException($"Autonomous tile-probe reserve for character {characterId} must be between 0 and 100000.");
+            if (MiningChargeReserve < 0 || MiningChargeReserve > 100000)
+                throw new InvalidOperationException($"Autonomous mining-charge reserve for character {characterId} must be between 0 and 100000.");
+            if (MaximumPurchaseQuantity < 1 || MaximumPurchaseQuantity > 10000)
+                throw new InvalidOperationException($"Autonomous mining purchase batch for character {characterId} must be between 1 and 10000.");
+            if (BuyFromMarket && (double.IsNaN(MaximumUnitPrice) || double.IsInfinity(MaximumUnitPrice) || MaximumUnitPrice <= 0))
+                throw new InvalidOperationException($"Autonomous mining maximum purchase price for character {characterId} must be greater than zero when market buying is enabled.");
+            if (BuyFromMarket && TileProbeReserve == 0 && MiningChargeReserve == 0)
+                throw new InvalidOperationException($"Autonomous mining market buying for character {characterId} requires a positive probe or charge reserve.");
         }
     }
 
