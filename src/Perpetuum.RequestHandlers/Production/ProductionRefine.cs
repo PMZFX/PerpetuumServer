@@ -1,44 +1,32 @@
-using Perpetuum.Containers;
-using Perpetuum.Data;
 using Perpetuum.Host.Requests;
-using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     //raw material -> basic commodity
     public class ProductionRefine : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionRefineActionService _refine;
 
-        public ProductionRefine(ProductionManager productionManager)
+        public ProductionRefine(IProductionRefineActionService refine)
         {
-            _productionManager = productionManager;
+            _refine = refine;
         }
 
         public void HandleRequest(IRequest request)
         {
-            using (var scope = Db.CreateTransaction())
+            var action = new ProductionRefineAction(
+                request.Data.GetOrDefault<long>(k.facility),
+                request.Data.GetOrDefault<int>(k.definition),
+                request.Data.GetOrDefault<int>(k.amount));
+            ProductionRefineResult result = _refine.Execute(
+                new GameActionContext(request.Session.Character, GameActionSource.Client),
+                action);
+            var replyDict = new System.Collections.Generic.Dictionary<string, object>
             {
-                var definition = request.Data.GetOrDefault<int>(k.definition);
-                var amount = request.Data.GetOrDefault<int>(k.amount);
-                var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-                var character = request.Session.Character;
-                var searchInRobots = request.Data.GetOrDefault<int>(k.inventory) != 1;
-
-                amount = amount.Clamp(0, 1000000);
-
-                _productionManager.ProductionProcessor.CheckTargetDefinitionAndThrowIfFailed(definition);
-
-                Refinery refinery;
-                PublicContainer sourceContainer;
-                _productionManager.PrepareProductionForPublicContainer(facilityEid, character, out refinery, out sourceContainer);
-
-                var replyDict = _productionManager.ProductionProcessor.Refine(refinery, character, sourceContainer, definition, amount);
-                Message.Builder.FromRequest(request).WithData(replyDict).Send();
-                
-                scope.Complete();
-            }
+                {k.sourceContainer, result.SourceContainer.ToDictionary()}
+            };
+            Message.Builder.FromRequest(request).WithData(replyDict).Send();
         }
     }
 }

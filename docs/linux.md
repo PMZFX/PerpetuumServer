@@ -120,6 +120,20 @@ character IDs:
 }
 ```
 
+## Shared gameplay actions
+
+Autonomous actors must use the same character-bound action services as client
+request handlers. Production refining and prototyping expose typed quote and
+execute operations through this boundary. They retain normal facility access,
+docking, technology, material, slot, credit, wallet, and transaction rules;
+the autonomous source marker is audit metadata and grants no privileges.
+
+The recipe catalog and industry planner are strategic, read-only tools. A plan
+does not reserve materials or authorize production. Before every production
+step, an actor must obtain a character-specific quote and execute it through
+the shared action service. This separation lets long-term planners be replaced
+or extended without creating a second, privileged gameplay implementation.
+
 Only dedicated characters should be enabled. A human relay session selecting a
 configured character suspends its autonomous controller; it resumes only after
 the human relay and zone sessions release that character. The idle behavior

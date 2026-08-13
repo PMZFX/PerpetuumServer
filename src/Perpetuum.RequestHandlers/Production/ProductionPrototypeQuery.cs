@@ -1,31 +1,30 @@
-using System.Collections.Generic;
 using Perpetuum.Host.Requests;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionPrototypeQuery : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionPrototypeActionService _prototype;
 
-        public ProductionPrototypeQuery(ProductionManager productionManager)
+        public ProductionPrototypeQuery(IProductionPrototypeActionService prototype)
         {
-            _productionManager = productionManager;
+            _prototype = prototype;
         }
 
         public void HandleRequest(IRequest request)
         {
-            var character = request.Session.Character;
-
-            var targetDefinition = request.Data.GetOrDefault<int>(k.definition);
-            var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-
-            _productionManager.GetFacilityAndCheckDocking(facilityEid, character, out Prototyper prototyper);
-
-            _productionManager.ProductionProcessor.PrototypeQuery(character, targetDefinition, prototyper, out Dictionary<string, object> replyDict).ThrowIfError();
-
-            Message.Builder.FromRequest(request).WithData(replyDict).Send();
+            var action = new ProductionPrototypeAction(
+                request.Data.GetOrDefault<long>(k.facility),
+                request.Data.GetOrDefault<int>(k.definition),
+                false);
+            PrototypeQuote quote = _prototype.Quote(
+                new GameActionContext(request.Session.Character, GameActionSource.Client),
+                action);
+            Message.Builder.FromRequest(request)
+                .WithData(quote.ToDictionary(request.Session.Character))
+                .Send();
         }
     }
 }

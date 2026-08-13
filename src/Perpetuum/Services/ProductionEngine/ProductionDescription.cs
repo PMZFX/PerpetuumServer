@@ -67,34 +67,30 @@ namespace Perpetuum.Services.ProductionEngine
 
         public static Dictionary<string, object> GetRequiredComponentsInfo(ProductionInProgressType productionInProgressType, int targetAmount, double materialMultiplier, List<ProductionComponent> components)
         {
-            var result = new Dictionary<string, object>();
-            var counter = 0;
+            return GetRequiredComponentsQuote(
+                    productionInProgressType,
+                    targetAmount,
+                    materialMultiplier,
+                    components)
+                .ToDictionary("c", component => component.ToDictionary(targetAmount));
+        }
 
-            foreach (var component in components)
-            {
-                if (component.IsSkipped(productionInProgressType)) continue;
-
-                var oneComponent = new Dictionary<string, object>
-                {
-                    {k.definition, component.EntityDefault.Definition}
-                };
-
-                //single component
-                if (component.IsSingle)
-                {
-                    oneComponent.Add(k.amount, targetAmount);
-                    oneComponent.Add(k.effectiveAmount, 1);
-                }
-                else
-                {
-                    oneComponent.Add(k.effectiveAmount, component.EffectiveAmount(targetAmount, materialMultiplier));
-                    oneComponent.Add(k.nominalAmount, component.Amount);
-                }
-
-                result.Add("c" + counter++, oneComponent);
-            }
-
-            return result;
+        public static IReadOnlyList<ProductionMaterialQuote> GetRequiredComponentsQuote(
+            ProductionInProgressType productionInProgressType,
+            int targetAmount,
+            double materialMultiplier,
+            IEnumerable<ProductionComponent> components)
+        {
+            return components
+                .Where(component => !component.IsSkipped(productionInProgressType))
+                .Select(component => new ProductionMaterialQuote(
+                    component.EntityDefault.Definition,
+                    component.IsSingle
+                        ? targetAmount
+                        : component.EffectiveAmount(targetAmount, materialMultiplier),
+                    component.Amount,
+                    component.IsSingle))
+                .ToArray();
         }
 
         public static ErrorCodes UpdateUsedComponents(IEnumerable<ProductionLiveComponent> usedComponents, Container container, Character character, TransactionType transactionType)
