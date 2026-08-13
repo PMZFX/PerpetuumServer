@@ -283,6 +283,8 @@ supply procurement leaves, but it never authorizes execution. Apply
 `database/overlays/006_ai_industry_goal.sql` and
 `database/overlays/007_ai_industry_lifecycle.sql`, and
 `database/overlays/008_ai_industry_refinery.sql` before enabling the behavior.
+Apply `database/overlays/013_ai_industry_demand.sql` before enabling the
+optional closed-economy sales policy.
 
 ```json
 {
@@ -303,10 +305,29 @@ supply procurement leaves, but it never authorizes execution. Apply
       "MaximumPurchaseQuantity": 100,
       "MaximumUnitPrice": 25.0,
       "WalletReserve": 10000.0
+    },
+    "Sales": {
+      "Enabled": false,
+      "MinimumUnitPrice": 5.0,
+      "OrderDurationHours": 24
     }
   }
 }
 ```
+
+`Sales.Enabled` is false by default. When enabled, the manufacturer observes
+only non-vendor buy orders visible in its current docking-base market and durably
+commits at most `Quantity` units when the best bid meets `MinimumUnitPrice`.
+That committed quantity survives restart while normal procurement, research,
+refining, calibration, and production run. Finished output waits when the bid
+disappears; it is never dumped or listed speculatively. Immediately before a
+sale, the controller re-queries the real bid and executes the same audited
+`marketCreateSellOrder` action used by P31 clients. The market mutation and
+cleared demand commitment share one database transaction, so restart cannot
+replay a committed sale. Production output may be sold directly from the
+character's public-container root through that shared action; item ownership,
+packing, damage, market access, price, wallet, corporation, and order rules
+remain authoritative for both clients and autonomous callers.
 
 `ResearchFacilityEid`, `PrototypeFacilityEid`, and `RefineryFacilityEid` are
 optional and default to zero. When the planner's next ordered step is refining,

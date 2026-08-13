@@ -343,6 +343,9 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousManufacturerProcurementOptions Procurement { get; set; } =
             new AutonomousManufacturerProcurementOptions();
 
+        public AutonomousManufacturerSalesOptions Sales { get; set; } =
+            new AutonomousManufacturerSalesOptions();
+
         public void Validate(int characterId)
         {
             if (TargetDefinition <= 0)
@@ -361,7 +364,31 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous manufacturer retry for character {characterId} must be between 5 and 3600 seconds.");
             if (Procurement == null)
                 throw new InvalidOperationException($"Autonomous manufacturer procurement options for character {characterId} cannot be null.");
+            if (Sales == null)
+                throw new InvalidOperationException($"Autonomous manufacturer sales options for character {characterId} cannot be null.");
             Procurement.Validate(characterId);
+            Sales.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousManufacturerSalesOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(1.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MinimumUnitPrice { get; set; } = 1.0;
+
+        [DefaultValue(24), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int OrderDurationHours { get; set; } = 24;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(MinimumUnitPrice) || double.IsInfinity(MinimumUnitPrice) ||
+                MinimumUnitPrice <= 0)
+                throw new InvalidOperationException($"Autonomous manufacturer minimum sale price for character {characterId} must be finite and positive.");
+            if (OrderDurationHours < 1 || OrderDurationHours > 720)
+                throw new InvalidOperationException($"Autonomous manufacturer order duration for character {characterId} must be between 1 and 720 hours.");
         }
     }
 

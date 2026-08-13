@@ -18,7 +18,8 @@ namespace Perpetuum.Services.Autonomous
             double? bestSellPrice,
             int? bestSellQuantity,
             double? averagePrice,
-            DateTime observedAtUtc)
+            DateTime observedAtUtc,
+            bool bestBuyIsVendor = false)
         {
             MarketEid = marketEid;
             DockingBaseEid = dockingBaseEid;
@@ -30,6 +31,7 @@ namespace Perpetuum.Services.Autonomous
             BestSellQuantity = bestSellQuantity;
             AveragePrice = averagePrice;
             ObservedAtUtc = observedAtUtc;
+            BestBuyIsVendor = bestBuyIsVendor;
         }
 
         public long MarketEid { get; }
@@ -42,6 +44,7 @@ namespace Perpetuum.Services.Autonomous
         public int? BestSellQuantity { get; }
         public double? AveragePrice { get; }
         public DateTime ObservedAtUtc { get; }
+        public bool BestBuyIsVendor { get; }
     }
 
     public interface IAutonomousMarketObservationService
@@ -95,7 +98,8 @@ namespace Perpetuum.Services.Autonomous
                 Positive(bestSell?.price),
                 PositiveQuantity(bestSell?.quantity),
                 Positive(average?.AveragePrice),
-                DateTime.UtcNow);
+                DateTime.UtcNow,
+                bestBuy?.isVendorItem == true);
         }
 
         private static double? Positive(double? value)

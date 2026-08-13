@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Perpetuum.Services.Actions;
 using Perpetuum.Services.Autonomous;
@@ -257,6 +258,109 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(0, waiting.RefineryFacilityEid);
             Assert.Equal(5, waiting.LineId);
             Assert.Equal(6, waiting.ProductionId);
+        }
+
+        [Theory]
+        [InlineData(10, 5.0, 6.0, 7, 7)]
+        [InlineData(3, 5.0, 6.0, 7, 3)]
+        [InlineData(10, 5.0, 4.0, 7, 0)]
+        [InlineData(10, 5.0, null, 7, 0)]
+        [InlineData(10, 5.0, 6.0, null, 0)]
+        public void ClosedEconomyCommitsOnlyBoundedVisibleDemand(
+            long maximumQuantity,
+            double minimumUnitPrice,
+            double? bestBuyPrice,
+            int? bestBuyQuantity,
+            long expected)
+        {
+            Assert.Equal(
+                expected,
+                AutonomousManufacturerEconomyPolicy.SelectDemandQuantity(
+                    maximumQuantity,
+                    minimumUnitPrice,
+                    bestBuyPrice,
+                    bestBuyQuantity));
+        }
+
+        [Fact]
+        public void ClosedEconomyDoesNotTreatVendorLiquidityAsPlayerDemand()
+        {
+            Assert.Equal(
+                0,
+                AutonomousManufacturerEconomyPolicy.SelectDemandQuantity(
+                    10,
+                    5,
+                    6,
+                    7,
+                    bestBuyIsVendor: true));
+        }
+
+        [Fact]
+        public void DemandCommitmentSurvivesProgressAndClearsOnlyAfterSale()
+        {
+            var goal = new AutonomousIndustryGoalState(
+                7,
+                100,
+                10,
+                3,
+                400,
+                "WaitingDemand");
+
+            AutonomousIndustryGoalState committed = goal.WithDemand(4, "DemandCommitted");
+            AutonomousIndustryGoalState producing = committed.WithProgress(
+                "WaitingProduction",
+                lineId: 5,
+                productionId: 6);
+            AutonomousIndustryGoalState sold = producing.WithDemand(0, "WaitingDemand");
+
+            Assert.Equal(4, producing.CommittedDemandQuantity);
+            Assert.Equal(7, AutonomousManufacturerEconomyPolicy.CompletionQuantity(producing, true));
+            Assert.Equal(13, AutonomousManufacturerEconomyPolicy.CompletionQuantity(producing, false));
+            Assert.Equal(0, sold.CommittedDemandQuantity);
+            Assert.Null(sold.ProductionId);
+        }
+
+        [Fact]
+        public void PartialSalePreservesOnlyUnfilledDemandAcrossRestart()
+        {
+            var committed = new AutonomousIndustryGoalState(
+                7,
+                100,
+                10,
+                3,
+                400,
+                "DemandCommitted",
+                committedDemandQuantity: 7);
+
+            long remaining = AutonomousManufacturerEconomyPolicy.RemainingDemand(
+                committed.CommittedDemandQuantity,
+                3);
+            AutonomousIndustryGoalState restored = committed.WithDemand(
+                remaining,
+                "WaitingSaleDemand");
+
+            Assert.Equal(4, restored.CommittedDemandQuantity);
+            Assert.Equal(7, AutonomousManufacturerEconomyPolicy.CompletionQuantity(restored, true));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                AutonomousManufacturerEconomyPolicy.RemainingDemand(4, 5));
+        }
+
+        [Fact]
+        public void RestartWithFinishedStockWaitsForTheCommittedSaleInsteadOfProducingAgain()
+        {
+            var restored = new AutonomousIndustryGoalState(
+                7,
+                100,
+                10,
+                3,
+                400,
+                "WaitingSaleDemand",
+                committedDemandQuantity: 4);
+
+            long completion = AutonomousManufacturerEconomyPolicy.CompletionQuantity(restored, true);
+
+            Assert.Equal(7, completion);
+            Assert.True(7 >= completion);
         }
 
         [Theory]
