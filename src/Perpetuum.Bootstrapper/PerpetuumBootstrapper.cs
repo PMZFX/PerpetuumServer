@@ -1678,6 +1678,8 @@ namespace Perpetuum.Bootstrapper
                 .SingleInstance();
             _ = _builder.RegisterType<AutonomousMissionObservationService>()
                 .As<IAutonomousMissionObservationService>();
+            _ = _builder.RegisterType<AutonomousMissionCharacterObservationService>()
+                .As<IAutonomousMissionCharacterObservationService>();
             _ = _builder.RegisterType<AutonomousMissionController>()
                 .As<IAutonomousMissionController>();
             _ = _builder.RegisterType<AutonomousRegionalMarketService>()

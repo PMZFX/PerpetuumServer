@@ -54,6 +54,48 @@ namespace Perpetuum.Services.Autonomous
         void Stop(GameActionContext context);
     }
 
+    public sealed class AutonomousMissionCharacterSnapshot
+    {
+        public AutonomousMissionCharacterSnapshot(
+            bool isDocked,
+            long dockingBaseEid,
+            int progressionExtensionLevel)
+        {
+            IsDocked = isDocked;
+            DockingBaseEid = dockingBaseEid;
+            ProgressionExtensionLevel = progressionExtensionLevel;
+        }
+
+        public bool IsDocked { get; }
+        public long DockingBaseEid { get; }
+        public int ProgressionExtensionLevel { get; }
+    }
+
+    public interface IAutonomousMissionCharacterObservationService
+    {
+        AutonomousMissionCharacterSnapshot Observe(
+            GameActionContext context,
+            int progressionExtensionId);
+    }
+
+    public sealed class AutonomousMissionCharacterObservationService :
+        IAutonomousMissionCharacterObservationService
+    {
+        public AutonomousMissionCharacterSnapshot Observe(
+            GameActionContext context,
+            int progressionExtensionId)
+        {
+            if (context == null)
+                throw new ArgumentNullException(nameof(context));
+            return new AutonomousMissionCharacterSnapshot(
+                context.Actor.IsDocked,
+                context.Actor.IsDocked ? context.Actor.CurrentDockingBaseEid : 0,
+                progressionExtensionId > 0
+                    ? context.Actor.GetExtensionLevel(progressionExtensionId)
+                    : 0);
+        }
+    }
+
     /// <summary>
     /// Executes a conservative, durable transport-mission loop. Every update
     /// re-observes authoritative mission and inventory state and performs at
@@ -65,6 +107,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IMissionActionService _missions;
         private readonly IAutonomousMissionObservationService _observations;
         private readonly IAutonomousMissionGoalStore _goals;
+        private readonly IAutonomousMissionCharacterObservationService _character;
         private readonly IAutonomousEquipmentObservationService _equipment;
         private readonly IAutonomousCargoService _cargo;
         private readonly IRelocateItemsActionService _relocate;
@@ -79,6 +122,7 @@ namespace Perpetuum.Services.Autonomous
             IMissionActionService missions,
             IAutonomousMissionObservationService observations,
             IAutonomousMissionGoalStore goals,
+            IAutonomousMissionCharacterObservationService character,
             IAutonomousEquipmentObservationService equipment,
             IAutonomousCargoService cargo,
             IRelocateItemsActionService relocate,
@@ -90,6 +134,7 @@ namespace Perpetuum.Services.Autonomous
             _missions = missions ?? throw new ArgumentNullException(nameof(missions));
             _observations = observations ?? throw new ArgumentNullException(nameof(observations));
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
+            _character = character ?? throw new ArgumentNullException(nameof(character));
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _cargo = cargo ?? throw new ArgumentNullException(nameof(cargo));
             _relocate = relocate ?? throw new ArgumentNullException(nameof(relocate));
@@ -123,9 +168,12 @@ namespace Perpetuum.Services.Autonomous
             Validate(context, options);
             if (elapsed < TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(elapsed));
+            AutonomousMissionCharacterSnapshot character = _character.Observe(
+                context,
+                options.ProgressionExtensionId);
             _retryElapsed += elapsed;
-            _dockedElapsed = context.Actor.IsDocked ? _dockedElapsed + elapsed : TimeSpan.Zero;
-            if (context.Actor.IsDocked && _travel.Status != AutonomousDestinationTravelStatus.Idle)
+            _dockedElapsed = character.IsDocked ? _dockedElapsed + elapsed : TimeSpan.Zero;
+            if (character.IsDocked && _travel.Status != AutonomousDestinationTravelStatus.Idle)
                 _travel.Stop(context);
 
             AutonomousMissionGoalState state = LoadOrCreate(context, options);
@@ -134,7 +182,7 @@ namespace Perpetuum.Services.Autonomous
                 IReadOnlyList<AutonomousMissionSnapshot> running = _observations.ObserveRunning(context);
                 state = Reconcile(context, state, running);
                 if (state.Complete)
-                    return HandleProgression(context, options, state, elapsed);
+                    return HandleProgression(context, options, character, state, elapsed);
 
                 AutonomousMissionSnapshot mission = state.MissionGuid.HasValue
                     ? running.FirstOrDefault(item => item.MissionGuid == state.MissionGuid.Value)
@@ -147,7 +195,7 @@ namespace Perpetuum.Services.Autonomous
                             "accepted_mission_not_yet_observable");
                     if (running.Count > 0)
                         return Wait(ref state, "waiting_existing_mission", "another_mission_is_running");
-                    return MoveToSourceOrStart(context, options, ref state, elapsed);
+                    return MoveToSourceOrStart(context, options, character, ref state, elapsed);
                 }
 
                 AutonomousMissionTargetSnapshot target = mission.CurrentTarget;
@@ -164,7 +212,14 @@ namespace Perpetuum.Services.Autonomous
                         "mission_observed",
                         mission.MissionGuid,
                         target.DestinationEid));
-                return MoveCargoTravelOrDeliver(context, options, mission, target, ref state, elapsed);
+                return MoveCargoTravelOrDeliver(
+                    context,
+                    options,
+                    character,
+                    mission,
+                    target,
+                    ref state,
+                    elapsed);
             }
             catch (PerpetuumException exception)
             {
@@ -220,12 +275,13 @@ namespace Perpetuum.Services.Autonomous
         private AutonomousMissionUpdateResult MoveToSourceOrStart(
             GameActionContext context,
             AutonomousMissionOptions options,
+            AutonomousMissionCharacterSnapshot character,
             ref AutonomousMissionGoalState state,
             TimeSpan elapsed)
         {
-            if (!context.Actor.IsDocked)
+            if (!character.IsDocked)
                 return Travel(context, options, ref state, state.SourceEid, elapsed);
-            if (context.Actor.CurrentDockingBaseEid != state.SourceEid)
+            if (character.DockingBaseEid != state.SourceEid)
                 return LeaveDock(context, options, ref state, state.SourceEid, "travelling_to_mission_source");
             if (!DelayPassed(options.DockedDwellSeconds))
                 return AutonomousMissionUpdateResult.Waiting;
@@ -252,14 +308,15 @@ namespace Perpetuum.Services.Autonomous
         private AutonomousMissionUpdateResult MoveCargoTravelOrDeliver(
             GameActionContext context,
             AutonomousMissionOptions options,
+            AutonomousMissionCharacterSnapshot character,
             AutonomousMissionSnapshot mission,
             AutonomousMissionTargetSnapshot target,
             ref AutonomousMissionGoalState state,
             TimeSpan elapsed)
         {
-            if (!context.Actor.IsDocked)
+            if (!character.IsDocked)
                 return Travel(context, options, ref state, target.DestinationEid, elapsed);
-            if (context.Actor.CurrentDockingBaseEid == target.DestinationEid)
+            if (character.DockingBaseEid == target.DestinationEid)
             {
                 if (!DelayPassed(options.DockedDwellSeconds))
                     return AutonomousMissionUpdateResult.Waiting;
@@ -305,6 +362,7 @@ namespace Perpetuum.Services.Autonomous
         private AutonomousMissionUpdateResult HandleProgression(
             GameActionContext context,
             AutonomousMissionOptions options,
+            AutonomousMissionCharacterSnapshot character,
             AutonomousMissionGoalState state,
             TimeSpan elapsed)
         {
@@ -313,13 +371,12 @@ namespace Perpetuum.Services.Autonomous
                 Write(ref state, state.WithProgress("complete"));
                 return AutonomousMissionUpdateResult.Complete;
             }
-            int currentLevel = context.Actor.GetExtensionLevel(options.ProgressionExtensionId);
-            if (currentLevel >= options.ProgressionExtensionLevel)
+            if (character.ProgressionExtensionLevel >= options.ProgressionExtensionLevel)
             {
                 Write(ref state, state.WithProgress("progression_complete"));
                 return AutonomousMissionUpdateResult.Complete;
             }
-            if (!context.Actor.IsDocked)
+            if (!character.IsDocked)
                 return Travel(context, options, ref state, state.SourceEid, elapsed);
             if (!DelayPassed(options.RetrySeconds))
                 return AutonomousMissionUpdateResult.Waiting;
