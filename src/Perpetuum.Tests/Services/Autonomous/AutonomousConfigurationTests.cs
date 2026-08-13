@@ -378,6 +378,29 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => options.Validate(22));
         }
 
+        [Fact]
+        public void EquipmentProcurementRequiresPriceCapAndSafeReserve()
+        {
+            var options = new AutonomousEquipmentOptions
+            {
+                Robot = "arkhe_empty",
+                RepairFacilityEid = 200,
+                Procurement = new AutonomousEquipmentProcurementOptions
+                {
+                    Enabled = true,
+                    MaximumUnitPrice = 0
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(22));
+            options.Procurement.MaximumUnitPrice = 100;
+            options.Procurement.WalletReserve = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(22));
+
+            options.Procurement.WalletReserve = 0;
+            options.Validate(22);
+        }
+
         [Theory]
         [InlineData(1, 48)]
         [InlineData(18, 129)]

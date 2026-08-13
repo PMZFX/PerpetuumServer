@@ -75,12 +75,46 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Empty(repair.Calls);
         }
 
+        [Fact]
+        public void MissingModuleCanBuyOneThenFitOnlyAfterItIsObserved()
+        {
+            var missing = Snapshot(Robot(active: true));
+            var loose = new AutonomousEquipmentItemSnapshot(30, 2000, 1, 1);
+            var purchased = new AutonomousEquipmentSnapshot(
+                true,
+                50,
+                10,
+                new[] {Robot(active: true)},
+                new[] {loose});
+            var observations = new QueueObservationService(missing, purchased);
+            var procurement = new RecordingProcurementService(
+                AutonomousEquipmentProcurement.Purchased(2000, 1, 25));
+            var fitting = new RecordingFittingService();
+            AutonomousEquipmentOptions options = Options();
+            options.Procurement.Enabled = true;
+            options.Procurement.MaximumUnitPrice = 30;
+            AutonomousEquipmentController controller = Controller(
+                observations,
+                new RecordingGoalStore(),
+                fitting: fitting,
+                procurement: procurement);
+
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(1, procurement.Calls);
+            Assert.Equal(0, fitting.Calls);
+
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(1, procurement.Calls);
+            Assert.Equal(1, fitting.Calls);
+        }
+
         private static AutonomousEquipmentController Controller(
             IAutonomousEquipmentObservationService observations,
             IAutonomousEquipmentGoalStore goals,
             ISelectActiveRobotActionService selection = null,
             IRobotFittingActionService fitting = null,
-            IProductionRepairActionService repair = null)
+            IProductionRepairActionService repair = null,
+            IAutonomousEquipmentProcurementService procurement = null)
         {
             return new AutonomousEquipmentController(
                 new EquipmentDefaults(),
@@ -89,6 +123,8 @@ namespace Perpetuum.Tests.Services.Autonomous
                 selection ?? new RecordingSelectService(),
                 fitting ?? new RecordingFittingService(),
                 repair ?? new RecordingRepairService(),
+                procurement ?? new RecordingProcurementService(
+                    AutonomousEquipmentProcurement.For(AutonomousEquipmentProcurementResult.Disabled)),
                 new RecordingAudit());
         }
 
@@ -253,6 +289,28 @@ namespace Perpetuum.Tests.Services.Autonomous
                 Calls.Add("execute");
                 Action = action;
                 return null;
+            }
+        }
+
+        private sealed class RecordingProcurementService : IAutonomousEquipmentProcurementService
+        {
+            private readonly AutonomousEquipmentProcurement _result;
+
+            public RecordingProcurementService(AutonomousEquipmentProcurement result)
+            {
+                _result = result;
+            }
+
+            public int Calls { get; private set; }
+
+            public AutonomousEquipmentProcurement PurchaseOne(
+                GameActionContext context,
+                int definition,
+                AutonomousEquipmentProcurementOptions options,
+                bool useCorporationWallet)
+            {
+                Calls++;
+                return _result;
             }
         }
 

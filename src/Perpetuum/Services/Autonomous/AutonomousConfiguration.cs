@@ -124,6 +124,9 @@ namespace Perpetuum.Services.Autonomous
         public List<AutonomousEquipmentSlotOptions> Slots { get; set; } =
             new List<AutonomousEquipmentSlotOptions>();
 
+        public AutonomousEquipmentProcurementOptions Procurement { get; set; } =
+            new AutonomousEquipmentProcurementOptions();
+
         public void Validate(int characterId)
         {
             if (string.IsNullOrWhiteSpace(Robot))
@@ -137,6 +140,8 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous equipment retry for character {characterId} must be between 5 and 3600 seconds.");
             if (Slots == null)
                 throw new InvalidOperationException($"Autonomous equipment slots for character {characterId} cannot be null.");
+            if (Procurement == null)
+                throw new InvalidOperationException($"Autonomous equipment procurement for character {characterId} cannot be null.");
 
             foreach (AutonomousEquipmentSlotOptions slot in Slots)
                 slot?.Validate(characterId);
@@ -144,6 +149,29 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous equipment slots for character {characterId} cannot contain null entries.");
             if (Slots.GroupBy(slot => new {slot.Component, slot.Slot}).Any(group => group.Count() > 1))
                 throw new InvalidOperationException($"Autonomous equipment for character {characterId} cannot configure the same slot twice.");
+            Procurement.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousEquipmentProcurementOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(0.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MaximumUnitPrice { get; set; }
+
+        [DefaultValue(10000.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double WalletReserve { get; set; } = 10000.0;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(WalletReserve) || double.IsInfinity(WalletReserve) || WalletReserve < 0)
+                throw new InvalidOperationException($"Autonomous equipment wallet reserve for character {characterId} must be finite and non-negative.");
+            if (Enabled && (double.IsNaN(MaximumUnitPrice) ||
+                            double.IsInfinity(MaximumUnitPrice) ||
+                            MaximumUnitPrice <= 0))
+                throw new InvalidOperationException($"Autonomous equipment maximum purchase price for character {characterId} must be positive when procurement is enabled.");
         }
     }
 

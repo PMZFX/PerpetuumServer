@@ -35,6 +35,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly ISelectActiveRobotActionService _selectRobot;
         private readonly IRobotFittingActionService _fitting;
         private readonly IProductionRepairActionService _repair;
+        private readonly IAutonomousEquipmentProcurementService _procurement;
         private readonly IAutonomousActorAudit _audit;
 
         public AutonomousEquipmentController(
@@ -44,6 +45,7 @@ namespace Perpetuum.Services.Autonomous
             ISelectActiveRobotActionService selectRobot,
             IRobotFittingActionService fitting,
             IProductionRepairActionService repair,
+            IAutonomousEquipmentProcurementService procurement,
             IAutonomousActorAudit audit)
         {
             _entityDefaults = entityDefaults ?? throw new ArgumentNullException(nameof(entityDefaults));
@@ -52,6 +54,7 @@ namespace Perpetuum.Services.Autonomous
             _selectRobot = selectRobot ?? throw new ArgumentNullException(nameof(selectRobot));
             _fitting = fitting ?? throw new ArgumentNullException(nameof(fitting));
             _repair = repair ?? throw new ArgumentNullException(nameof(repair));
+            _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         }
 
@@ -81,12 +84,20 @@ namespace Perpetuum.Services.Autonomous
                         return AutonomousEquipmentUpdateResult.Waiting;
 
                     case AutonomousEquipmentDirectiveType.MissingRobot:
-                        WriteBlocked(ref state, "missing_robot", directive, $"missing_robot_{directive.Definition}");
-                        return AutonomousEquipmentUpdateResult.Blocked;
+                        return HandleMissingSupply(
+                            context,
+                            options,
+                            ref state,
+                            directive,
+                            "missing_robot");
 
                     case AutonomousEquipmentDirectiveType.MissingModule:
-                        WriteBlocked(ref state, "missing_module", directive, $"missing_module_{directive.Definition}");
-                        return AutonomousEquipmentUpdateResult.Blocked;
+                        return HandleMissingSupply(
+                            context,
+                            options,
+                            ref state,
+                            directive,
+                            "missing_module");
 
                     case AutonomousEquipmentDirectiveType.SelectRobot:
                         WriteProgress(ref state, "selecting_robot", directive.RobotEid);
@@ -206,6 +217,59 @@ namespace Perpetuum.Services.Autonomous
                     "equipment_supply_required",
                     AutonomousActorStatus.Active,
                     reason);
+            }
+        }
+
+        private AutonomousEquipmentUpdateResult HandleMissingSupply(
+            GameActionContext context,
+            AutonomousEquipmentOptions options,
+            ref AutonomousEquipmentGoalState state,
+            AutonomousEquipmentDirective directive,
+            string missingPhase)
+        {
+            AutonomousEquipmentProcurement procurement = _procurement.PurchaseOne(
+                context,
+                directive.Definition,
+                options.Procurement,
+                options.UseCorporationWallet);
+            switch (procurement.Result)
+            {
+                case AutonomousEquipmentProcurementResult.Purchased:
+                    WriteProgress(
+                        ref state,
+                        "supply_purchased",
+                        directive.RobotEid,
+                        $"definition_{procurement.Definition}_price_{procurement.UnitPrice:0.###}");
+                    _audit.Write(
+                        state.CharacterId,
+                        "equipment_supply_purchased",
+                        AutonomousActorStatus.Active,
+                        $"definition_{procurement.Definition}_quantity_{procurement.Quantity}_price_{procurement.UnitPrice:0.###}");
+                    return AutonomousEquipmentUpdateResult.Acted;
+
+                case AutonomousEquipmentProcurementResult.NoEligibleOffer:
+                    WriteBlocked(
+                        ref state,
+                        "supply_unavailable",
+                        directive,
+                        $"no_offer_{directive.Definition}");
+                    return AutonomousEquipmentUpdateResult.Blocked;
+
+                case AutonomousEquipmentProcurementResult.WalletReserveReached:
+                    WriteBlocked(
+                        ref state,
+                        "wallet_reserve",
+                        directive,
+                        $"wallet_reserve_{directive.Definition}");
+                    return AutonomousEquipmentUpdateResult.Blocked;
+
+                default:
+                    WriteBlocked(
+                        ref state,
+                        missingPhase,
+                        directive,
+                        $"{missingPhase}_{directive.Definition}");
+                    return AutonomousEquipmentUpdateResult.Blocked;
             }
         }
 
