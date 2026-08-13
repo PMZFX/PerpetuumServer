@@ -1647,6 +1647,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousDamageMonitor>();
             _ = _builder.RegisterType<AutonomousMiningEquipmentService>()
                 .As<IAutonomousMiningEquipmentService>();
+            _ = _builder.RegisterType<AutonomousEquipmentObservationService>()
+                .As<IAutonomousEquipmentObservationService>();
             _ = _builder.RegisterType<AutonomousCargoService>()
                 .As<IAutonomousCargoService>();
             _ = _builder.RegisterType<AutonomousMarketObservationService>()
@@ -1659,6 +1661,9 @@ namespace Perpetuum.Bootstrapper
                 .SingleInstance();
             _ = _builder.RegisterType<DatabaseAutonomousIndustryGoalStore>()
                 .As<IAutonomousIndustryGoalStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousEquipmentGoalStore>()
+                .As<IAutonomousEquipmentGoalStore>()
                 .SingleInstance();
             _ = _builder.RegisterType<AutonomousRegionalMarketService>()
                 .As<IAutonomousRegionalMarketService>();
