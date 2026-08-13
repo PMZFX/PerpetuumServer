@@ -119,6 +119,40 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(2, store.State.RecoveryRevision);
         }
 
+        [Fact]
+        public void ReadyReplacementCanBeAcknowledgedWithoutConfigurationMutation()
+        {
+            var store = new RecordingStateStore
+            {
+                State = State(expectedRobotEid: 10, observedRobotEid: 20, recoveryRequired: true, revision: 3)
+            };
+            var tracker = NewTracker(store);
+            Assert.Equal(
+                AutonomousRecoveryStartDisposition.RecoveryRequired,
+                tracker.Start(20, 3));
+
+            Assert.True(tracker.AcknowledgeReadyRobot(20));
+            Assert.False(store.State.RecoveryRequired);
+            Assert.Equal(20, store.State.ExpectedRobotEid);
+            Assert.Equal(3, store.State.RecoveryRevision);
+
+            var restarted = NewTracker(store);
+            Assert.Equal(AutonomousRecoveryStartDisposition.Ready, restarted.Start(20, 3));
+        }
+
+        [Fact]
+        public void ReplacementCannotBeAcknowledgedWithoutRecoveryAndObservedRobot()
+        {
+            var store = new RecordingStateStore();
+            var tracker = NewTracker(store);
+            tracker.Start(10, 0);
+
+            Assert.False(tracker.AcknowledgeReadyRobot(20));
+            tracker.RequireRecovery(AutonomousRobotRecoveryReason.RobotDestroyed, 10);
+            Assert.False(tracker.AcknowledgeReadyRobot(0));
+            Assert.True(store.State.RecoveryRequired);
+        }
+
         private static AutonomousRobotRecoveryTracker NewTracker(IAutonomousActorStateStore store)
         {
             return new AutonomousRobotRecoveryTracker(7, "patrol", store);

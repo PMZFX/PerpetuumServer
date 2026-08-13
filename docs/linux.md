@@ -140,6 +140,59 @@ step, an actor must obtain a character-specific quote and execute it through
 the shared action service. This separation lets long-term planners be replaced
 or extended without creating a second, privileged gameplay implementation.
 
+Docked equipment lifecycle support is opt-in through an actor's `Equipment`
+section. It observes only that character's current public container, owned
+robots, fitting, damage, cargo capacity, and loaded ammunition. On each retry
+it performs at most one normal action: buy one missing item from a visible
+price-capped local sell order, select an owned unpacked robot, quote and repair
+it, remove one conflicting module, fit one owned module, or load one observed
+ammunition stack. The controller re-observes authoritative inventory before
+the next action and persists only intent and blocked reasons in
+`dbo.ai_equipment_goal`; apply `database/overlays/009_ai_equipment_goal.sql`
+before enabling it.
+
+The standalone `equipment` behavior is useful for a docked provisioning actor.
+The same section can instead be enabled on `mining`, `trader`, or `patrol`.
+Those roles remain held after a destroyed or replaced robot until the equipment
+controller freshly proves the selected robot is healthy and matches every
+configured module and ammunition requirement. With `Equipment.Enabled` false,
+the earlier manual `RecoveryRevision` policy is unchanged.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "mining",
+  "Equipment": {
+    "Enabled": true,
+    "Robot": "def_configured_robot",
+    "RepairFacilityEid": 456,
+    "RepairBelowRatio": 0.95,
+    "UseCorporationWallet": false,
+    "RetrySeconds": 30,
+    "Slots": [
+      {
+        "Module": "def_configured_module",
+        "Ammo": "def_configured_ammo",
+        "Component": "Head",
+        "Slot": 1
+      }
+    ],
+    "Procurement": {
+      "Enabled": true,
+      "MaximumUnitPrice": 100000.0,
+      "WalletReserve": 10000.0
+    }
+  }
+}
+```
+
+Definition names and slot choices are configuration preferences, not fitting
+permission. The shared selection, fitting, ammunition, repair, and market
+actions still enforce extensions, ownership, facility access, compatibility,
+wallets, price, capacity, and transactions. Missing supply or money leaves a
+durable wait state; nothing is spawned, reimbursed, or granted.
+
 The opt-in `manufacturer` behavior is the first narrow execution loop. It
 requires a dedicated character, a target definition, quantity, and mill
 facility. Its durable row in `dbo.ai_industry_goal` records the original target

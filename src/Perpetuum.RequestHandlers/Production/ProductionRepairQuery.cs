@@ -1,28 +1,34 @@
-using Perpetuum.Containers;
+using System.Collections.Generic;
 using Perpetuum.Host.Requests;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionRepairQuery : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionRepairActionService _repair;
 
-        public ProductionRepairQuery(ProductionManager productionManager)
+        public ProductionRepairQuery(IProductionRepairActionService repair)
         {
-            _productionManager = productionManager;
+            _repair = repair;
         }
 
         public void HandleRequest(IRequest request)
         {
-            var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-            var target = request.Data.GetOrDefault<long[]>(k.target);
-            var character = request.Session.Character;
-
-            _productionManager.PrepareProductionForPublicContainer(facilityEid, character, out Repair repairFacility, out PublicContainer sourceContainer);
-
-            var result = repairFacility.QueryPrices(character, sourceContainer, target);
+            var action = new ProductionRepairAction(
+                request.Data.GetOrDefault<long>(k.facility),
+                request.Data.GetOrDefault<long[]>(k.target));
+            RepairQuote quote = _repair.Quote(
+                new GameActionContext(request.Session.Character, GameActionSource.Client),
+                action);
+            var prices = quote.Items.ToDictionary("e", item => new Dictionary<string, object>
+            {
+                {k.eid, item.ItemEid},
+                {k.price, item.Price},
+                {k.health, item.HealthRatio}
+            });
+            var result = new Dictionary<string, object> {{"prices", prices}};
             Message.Builder.FromRequest(request).WithData(result).Send();
         }
     }

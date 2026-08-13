@@ -1,64 +1,34 @@
 using System.Collections.Generic;
-using System.Transactions;
-using Perpetuum.Containers;
-using Perpetuum.Data;
-using Perpetuum.EntityFramework;
 using Perpetuum.Host.Requests;
-using Perpetuum.Items;
-using Perpetuum.Robots;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers
 {
     public class RemoveModule : IRequestHandler
     {
-        private readonly IEntityRepository _entityRepository;
-        private readonly RobotHelper _robotHelper;
+        private readonly IRobotFittingActionService _fitting;
 
-        public RemoveModule(IEntityRepository entityRepository,RobotHelper robotHelper)
+        public RemoveModule(IRobotFittingActionService fitting)
         {
-            _entityRepository = entityRepository;
-            _robotHelper = robotHelper;
+            _fitting = fitting;
         }
 
         public void HandleRequest(IRequest request)
         {
-            using (var scope = Db.CreateTransaction())
+            var action = new RemoveModuleAction(
+                request.Data.GetOrDefault<long>(k.containerEID),
+                request.Data.GetOrDefault<long>(k.robotEID),
+                request.Data.GetOrDefault<long>(k.moduleEID));
+            RobotFittingResult fittingResult = _fitting.Remove(
+                new GameActionContext(request.Session.Character, GameActionSource.Client),
+                action);
+
+            var result = new Dictionary<string, object>
             {
-                var character = request.Session.Character;
-                character.IsDocked.ThrowIfFalse(ErrorCodes.CharacterHasToBeDocked); 
-            
-                var containerEid = request.Data.GetOrDefault<long>(k.containerEID);
-                var container = Container.GetWithItems(containerEid, character).ThrowIfNull(ErrorCodes.ContainerNotFound);
-                container.ThrowIfType<VolumeWrapperContainer>(ErrorCodes.AccessDenied);
-                container.EnlistTransaction();
-
-                var robotEid = request.Data.GetOrDefault<long>(k.robotEID);
-                var robot = _robotHelper.LoadRobotOrThrow(robotEid);
-                robot.IsSingleAndUnpacked.ThrowIfFalse(ErrorCodes.RobotMustbeSingleAndNonRepacked);
-                robot.EnlistTransaction();
-
-                var moduleEid = request.Data.GetOrDefault<long>(k.moduleEID);
-                var module = robot.GetModule(moduleEid).ThrowIfNull(ErrorCodes.ModuleNotFound);
-                module.Owner = character.Eid;
-                module.Unequip(container);
-
-                robot.Initialize(character);
-                robot.Save();
-                container.Save();
-
-                Transaction.Current.OnCompleted(completed =>
-                {
-                    var result = new Dictionary<string, object>
-                    {
-                        {k.robot, robot.ToDictionary()}, 
-                        {k.container, container.ToDictionary()}
-                    };
-
-                    Message.Builder.FromRequest(request).WithData(result).WrapToResult().Send();
-                });
-                
-                scope.Complete();
-            }
+                {k.robot, fittingResult.Robot.ToDictionary()},
+                {k.container, fittingResult.Container.ToDictionary()}
+            };
+            Message.Builder.FromRequest(request).WithData(result).WrapToResult().Send();
         }
     }
 }

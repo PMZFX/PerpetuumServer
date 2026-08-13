@@ -119,14 +119,27 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
         public IDictionary<string,object> QueryPrices(Character character, Container container, IEnumerable<long> targetEids)
         {
-            var prices = container.SelectDamagedItems(targetEids).ToDictionary("e", item => new Dictionary<string, object>
+            var prices = GetRepairQuote(character, container, targetEids).Items.ToDictionary("e", item => new Dictionary<string, object>
             {
-                {k.eid, item.Eid},
-                {k.price, GetRepairPrice(character,item)},
+                {k.eid, item.ItemEid},
+                {k.price, item.Price},
                 {k.health, item.HealthRatio}
             });
 
             return new Dictionary<string, object> {{"prices", prices}};
+        }
+
+        public RepairQuote GetRepairQuote(
+            Character character,
+            Container container,
+            IEnumerable<long> targetEids)
+        {
+            var items = container.SelectDamagedItems(targetEids)
+                .Select(item => new RepairItemQuote(
+                    item.Eid,
+                    GetRepairPrice(character, item),
+                    item.HealthRatio));
+            return new RepairQuote(Eid, items);
         }
     }
 }

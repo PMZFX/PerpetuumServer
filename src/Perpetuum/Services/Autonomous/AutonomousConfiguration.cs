@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using Newtonsoft.Json;
+using Perpetuum.Robots;
 using Perpetuum.Zones.Terrains.Materials;
 
 namespace Perpetuum.Services.Autonomous
@@ -70,6 +71,19 @@ namespace Perpetuum.Services.Autonomous
                         throw new InvalidOperationException($"Autonomous manufacturer options for character {actor.CharacterId} cannot be null.");
                     actor.Manufacturer.Validate(actor.CharacterId);
                 }
+
+                if (string.Equals(actor.Behavior?.Trim(), "equipment", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Equipment == null)
+                        throw new InvalidOperationException($"Autonomous equipment options for character {actor.CharacterId} cannot be null.");
+                    if (!actor.Equipment.Enabled)
+                        throw new InvalidOperationException($"Autonomous equipment behavior for character {actor.CharacterId} must be enabled.");
+                    actor.Equipment.Validate(actor.CharacterId);
+                }
+                else if (actor.Equipment?.Enabled == true)
+                {
+                    actor.Equipment.Validate(actor.CharacterId);
+                }
             }
         }
     }
@@ -94,6 +108,106 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousTraderOptions Trader { get; set; } = new AutonomousTraderOptions();
 
         public AutonomousManufacturerOptions Manufacturer { get; set; } = new AutonomousManufacturerOptions();
+
+        public AutonomousEquipmentOptions Equipment { get; set; } = new AutonomousEquipmentOptions();
+    }
+
+    public sealed class AutonomousEquipmentOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        public string Robot { get; set; }
+
+        public long RepairFacilityEid { get; set; }
+
+        [DefaultValue(0.95), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double RepairBelowRatio { get; set; } = 0.95;
+
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool UseCorporationWallet { get; set; }
+
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RetrySeconds { get; set; } = 30;
+
+        public List<AutonomousEquipmentSlotOptions> Slots { get; set; } =
+            new List<AutonomousEquipmentSlotOptions>();
+
+        public AutonomousEquipmentProcurementOptions Procurement { get; set; } =
+            new AutonomousEquipmentProcurementOptions();
+
+        public void Validate(int characterId)
+        {
+            if (!Enabled)
+                return;
+            if (string.IsNullOrWhiteSpace(Robot))
+                throw new InvalidOperationException($"Autonomous equipment for character {characterId} requires a robot definition name.");
+            if (RepairFacilityEid <= 0)
+                throw new InvalidOperationException($"Autonomous equipment for character {characterId} requires a positive repair facility EID.");
+            if (double.IsNaN(RepairBelowRatio) || double.IsInfinity(RepairBelowRatio) ||
+                RepairBelowRatio < 0 || RepairBelowRatio > 1)
+                throw new InvalidOperationException($"Autonomous equipment repair ratio for character {characterId} must be between 0 and 1.");
+            if (RetrySeconds < 5 || RetrySeconds > 3600)
+                throw new InvalidOperationException($"Autonomous equipment retry for character {characterId} must be between 5 and 3600 seconds.");
+            if (Slots == null)
+                throw new InvalidOperationException($"Autonomous equipment slots for character {characterId} cannot be null.");
+            if (Procurement == null)
+                throw new InvalidOperationException($"Autonomous equipment procurement for character {characterId} cannot be null.");
+
+            foreach (AutonomousEquipmentSlotOptions slot in Slots)
+                slot?.Validate(characterId);
+            if (Slots.Any(slot => slot == null))
+                throw new InvalidOperationException($"Autonomous equipment slots for character {characterId} cannot contain null entries.");
+            if (Slots.GroupBy(slot => new {slot.Component, slot.Slot}).Any(group => group.Count() > 1))
+                throw new InvalidOperationException($"Autonomous equipment for character {characterId} cannot configure the same slot twice.");
+            Procurement.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousEquipmentProcurementOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(0.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MaximumUnitPrice { get; set; }
+
+        [DefaultValue(10000.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double WalletReserve { get; set; } = 10000.0;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(WalletReserve) || double.IsInfinity(WalletReserve) || WalletReserve < 0)
+                throw new InvalidOperationException($"Autonomous equipment wallet reserve for character {characterId} must be finite and non-negative.");
+            if (Enabled && (double.IsNaN(MaximumUnitPrice) ||
+                            double.IsInfinity(MaximumUnitPrice) ||
+                            MaximumUnitPrice <= 0))
+                throw new InvalidOperationException($"Autonomous equipment maximum purchase price for character {characterId} must be positive when procurement is enabled.");
+        }
+    }
+
+    public sealed class AutonomousEquipmentSlotOptions
+    {
+        public string Module { get; set; }
+        public string Ammo { get; set; }
+        public string Component { get; set; }
+        public int Slot { get; set; }
+
+        public RobotComponentType GetComponentType()
+        {
+            return Enum.Parse<RobotComponentType>(Component, true);
+        }
+
+        public void Validate(int characterId)
+        {
+            if (string.IsNullOrWhiteSpace(Module))
+                throw new InvalidOperationException($"Autonomous equipment slot for character {characterId} requires a module definition name.");
+            if (!Enum.TryParse(Component, true, out RobotComponentType component) ||
+                !Enum.IsDefined(typeof(RobotComponentType), component))
+                throw new InvalidOperationException($"Autonomous equipment slot for character {characterId} has an invalid robot component.");
+            if (Slot < 0)
+                throw new InvalidOperationException($"Autonomous equipment slot for character {characterId} cannot be negative.");
+        }
     }
 
     public sealed class AutonomousManufacturerOptions
