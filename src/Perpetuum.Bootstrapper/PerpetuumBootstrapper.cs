@@ -1665,6 +1665,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousCargoDispositionService>();
             _ = _builder.RegisterType<AutonomousMiningProcurementService>()
                 .As<IAutonomousMiningProcurementService>();
+            _ = _builder.RegisterType<AutonomousIndustryProcurementService>()
+                .As<IAutonomousIndustryProcurementService>();
             _ = _builder.RegisterType<AutonomousTeleportNetworkService>()
                 .As<IAutonomousTeleportNetworkService>();
             _ = _builder.RegisterType<AutonomousWorldTravelService>()
