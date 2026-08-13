@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.Autonomous;
 using Perpetuum.Services.ProductionEngine;
 using Xunit;
@@ -59,6 +60,73 @@ namespace Perpetuum.Tests.Services.Autonomous
                 new Dictionary<int, long> {{200, 2}, {300, 1}});
 
             Assert.Equal(new Dictionary<int, long> {{200, 5}}, missing);
+        }
+
+        [Fact]
+        public void ExactRefineryQuoteUsesEffectiveCharacterAmounts()
+        {
+            var quote = new RefineQuote(
+                100,
+                2,
+                400,
+                new[]
+                {
+                    new RefineComponentQuote(200, 10, 12),
+                    new RefineComponentQuote(300, 5, 7)
+                });
+
+            IReadOnlyDictionary<int, long> missing =
+                AutonomousManufacturerPolicy.FindMissingMaterials(
+                    quote,
+                    new Dictionary<int, long> {{200, 9}, {300, 7}});
+
+            Assert.Equal(new Dictionary<int, long> {{200, 3}}, missing);
+        }
+
+        [Fact]
+        public void PlannerOnlyOffersItsFirstOrderedStepForRefining()
+        {
+            var recipes = new DictionaryRecipeCatalog(
+                new ProductionRecipe(
+                    100,
+                    "refined",
+                    1,
+                    new[] {new ProductionRecipeComponent(200, 5)},
+                    ProductionRecipeProcess.Refining,
+                    100,
+                    0,
+                    null),
+                new ProductionRecipe(
+                    300,
+                    "manufactured",
+                    1,
+                    new[] {new ProductionRecipeComponent(100, 1)},
+                    ProductionRecipeProcess.MassProduction,
+                    300,
+                    1,
+                    301));
+            var planner = new AutonomousIndustryPlanner(recipes);
+
+            AutonomousIndustryProductionStep step =
+                AutonomousManufacturerPolicy.SelectNextRefiningStep(planner.Plan(300, 2));
+
+            Assert.Equal(100, step.Definition);
+            Assert.Equal(2, AutonomousManufacturerPolicy.SelectRefineAmount(step));
+            Assert.Equal(
+                ProductionRefineAmountPolicy.MaximumAmount,
+                AutonomousManufacturerPolicy.SelectRefineAmount(
+                    new AutonomousIndustryProductionStep(
+                        step.Recipe,
+                        ProductionRefineAmountPolicy.MaximumAmount + 1L)));
+            Assert.Null(AutonomousManufacturerPolicy.SelectNextRefiningStep(
+                planner.Plan(300, 1, new Dictionary<int, long> {{100, 1}})));
+
+            IReadOnlyDictionary<int, long> remainingInventory =
+                AutonomousManufacturerPolicy.ForRemainingTarget(
+                    new Dictionary<int, long> {{100, 1}, {300, 9}},
+                    300);
+            Assert.Equal(100, AutonomousManufacturerPolicy.SelectNextRefiningStep(
+                planner.Plan(300, 2, remainingInventory)).Definition);
         }
 
         [Theory]
@@ -151,6 +219,7 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(400, waiting.MillFacilityEid);
             Assert.Equal(450, waiting.ResearchFacilityEid);
             Assert.Equal(460, waiting.PrototypeFacilityEid);
+            Assert.Equal(0, waiting.RefineryFacilityEid);
             Assert.Equal(5, waiting.LineId);
             Assert.Equal(6, waiting.ProductionId);
         }
@@ -176,6 +245,24 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             Assert.Equal(observationPhase, observing.Phase);
             Assert.Null(observing.ProductionId);
+        }
+
+        private sealed class DictionaryRecipeCatalog : IProductionRecipeCatalog
+        {
+            private readonly IReadOnlyDictionary<int, ProductionRecipe> _recipes;
+
+            public DictionaryRecipeCatalog(params ProductionRecipe[] recipes)
+            {
+                var values = new Dictionary<int, ProductionRecipe>();
+                foreach (ProductionRecipe recipe in recipes)
+                    values.Add(recipe.Definition, recipe);
+                _recipes = values;
+            }
+
+            public bool TryGet(int definition, out ProductionRecipe recipe)
+            {
+                return _recipes.TryGetValue(definition, out recipe);
+            }
         }
     }
 }
