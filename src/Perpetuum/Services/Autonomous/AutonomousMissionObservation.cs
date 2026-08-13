@@ -23,7 +23,10 @@ namespace Perpetuum.Services.Autonomous
             int progress,
             int definition,
             int quantity,
-            long destinationEid)
+            long destinationEid,
+            int zoneId = -1,
+            Position? targetPosition = null,
+            int targetPositionRange = 0)
         {
             TargetId = targetId;
             Type = type;
@@ -34,6 +37,9 @@ namespace Perpetuum.Services.Autonomous
             Definition = definition;
             Quantity = quantity;
             DestinationEid = destinationEid;
+            ZoneId = zoneId;
+            TargetPosition = targetPosition;
+            TargetPositionRange = targetPositionRange;
         }
 
         public int TargetId { get; }
@@ -46,6 +52,10 @@ namespace Perpetuum.Services.Autonomous
         public int Quantity { get; }
         public int RemainingQuantity => Math.Max(0, Quantity - Progress);
         public long DestinationEid { get; }
+        public int ZoneId { get; }
+        public Position? TargetPosition { get; }
+        public int TargetPositionRange { get; }
+        public bool HasMapTarget => ZoneId >= 0 && TargetPosition.HasValue && TargetPositionRange > 0;
     }
 
     public sealed class AutonomousMissionSnapshot
@@ -172,7 +182,10 @@ namespace Perpetuum.Services.Autonomous
                 target.progressCount,
                 definition.Definition,
                 definition.Quantity,
-                definition.MissionStructureEid);
+                definition.MissionStructureEid,
+                definition.ZoneId,
+                definition.ValidPositionSet ? definition.targetPosition : (Position?)null,
+                definition.TargetPositionRange);
         }
     }
 }

@@ -23,9 +23,21 @@ namespace Perpetuum.Services.Autonomous
             Position position,
             double distance,
             bool hostile)
+            : this(eid, kind, 0, position, distance, hostile)
+        {
+        }
+
+        public AutonomousVisibleUnitSnapshot(
+            long eid,
+            AutonomousVisibleUnitKind kind,
+            int definition,
+            Position position,
+            double distance,
+            bool hostile)
         {
             Eid = eid;
             Kind = kind;
+            Definition = definition;
             Position = position;
             Distance = distance;
             Hostile = hostile;
@@ -33,6 +45,7 @@ namespace Perpetuum.Services.Autonomous
 
         public long Eid { get; }
         public AutonomousVisibleUnitKind Kind { get; }
+        public int Definition { get; }
         public Position Position { get; }
         public double Distance { get; }
         public bool Hostile { get; }
@@ -166,6 +179,7 @@ namespace Perpetuum.Services.Autonomous
                 .Select(target => new AutonomousVisibleUnitSnapshot(
                     target.Eid,
                     GetKind(target),
+                    target.Definition,
                     target.CurrentPosition,
                     Distance2D(player.CurrentPosition, target.CurrentPosition),
                     target.IsHostile(player)))

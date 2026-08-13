@@ -53,8 +53,24 @@ namespace Perpetuum.Services.Autonomous
             bool dead,
             AutonomousDefenseLockState lockState = AutonomousDefenseLockState.Missing,
             long lockId = 0)
+            : this(eid, 0, position, distance, visible, hostile, npc, dead, lockState, lockId)
+        {
+        }
+
+        public AutonomousPveTargetSnapshot(
+            long eid,
+            int definition,
+            Position position,
+            double distance,
+            bool visible,
+            bool hostile,
+            bool npc,
+            bool dead,
+            AutonomousDefenseLockState lockState = AutonomousDefenseLockState.Missing,
+            long lockId = 0)
         {
             Eid = eid;
+            Definition = definition;
             Position = position;
             Distance = distance;
             Visible = visible;
@@ -66,6 +82,7 @@ namespace Perpetuum.Services.Autonomous
         }
 
         public long Eid { get; }
+        public int Definition { get; }
         public Position Position { get; }
         public double Distance { get; }
         public bool Visible { get; }
@@ -142,6 +159,7 @@ namespace Perpetuum.Services.Autonomous
             AutonomousPveTargetSnapshot[] visibleTargets = perception.VisibleUnits
                 .Select(unit => new AutonomousPveTargetSnapshot(
                     unit.Eid,
+                    unit.Definition,
                     unit.Position,
                     unit.Distance,
                     true,
@@ -185,6 +203,7 @@ namespace Perpetuum.Services.Autonomous
             bool isVisible = visible != null;
             return new AutonomousPveTargetSnapshot(
                 targetEid,
+                target.Definition,
                 isVisible ? visible.Position : target.CurrentPosition,
                 isVisible ? visible.Distance : player.GetDistance(target),
                 isVisible,
@@ -244,11 +263,55 @@ namespace Perpetuum.Services.Autonomous
         public string Reason { get; }
     }
 
+    /// <summary>
+    /// Narrows tactical PvE to a durable external assignment using only
+    /// definition and map-area data exposed in the player's mission payload.
+    /// The external system remains authoritative for objective completion.
+    /// </summary>
+    public sealed class AutonomousPveCombatObjective
+    {
+        public AutonomousPveCombatObjective(
+            string assignmentKey,
+            int requiredDefinition,
+            Position? center = null,
+            double selectionRadius = 0)
+        {
+            if (string.IsNullOrWhiteSpace(assignmentKey) || assignmentKey.Length > 128)
+                throw new ArgumentException("A bounded combat assignment key is required.", nameof(assignmentKey));
+            if (requiredDefinition <= 0)
+                throw new ArgumentOutOfRangeException(nameof(requiredDefinition));
+            if (center.HasValue && (double.IsNaN(selectionRadius) ||
+                                    double.IsInfinity(selectionRadius) || selectionRadius <= 0))
+                throw new ArgumentOutOfRangeException(nameof(selectionRadius));
+
+            AssignmentKey = assignmentKey;
+            RequiredDefinition = requiredDefinition;
+            Center = center;
+            SelectionRadius = selectionRadius;
+        }
+
+        public string AssignmentKey { get; }
+        public int RequiredDefinition { get; }
+        public Position? Center { get; }
+        public double SelectionRadius { get; }
+
+        public bool Matches(AutonomousPveTargetSnapshot target)
+        {
+            return target != null && target.Definition == RequiredDefinition &&
+                   (!Center.HasValue ||
+                    Center.Value.TotalDistance2D(target.Position) <= SelectionRadius);
+        }
+    }
+
     public interface IAutonomousPveCombatController
     {
         AutonomousPveCombatUpdate Update(
             GameActionContext context,
             AutonomousPveOptions options);
+        AutonomousPveCombatUpdate UpdateObjective(
+            GameActionContext context,
+            AutonomousPveOptions options,
+            AutonomousPveCombatObjective objective);
         void Stop(GameActionContext context);
         bool RecordLoss(GameActionContext context, AutonomousPveOptions options, long lostRobotEid);
         void AcknowledgeDockedPreparation(GameActionContext context);
@@ -288,6 +351,24 @@ namespace Perpetuum.Services.Autonomous
             GameActionContext context,
             AutonomousPveOptions options)
         {
+            return UpdateCore(context, options, null);
+        }
+
+        public AutonomousPveCombatUpdate UpdateObjective(
+            GameActionContext context,
+            AutonomousPveOptions options,
+            AutonomousPveCombatObjective objective)
+        {
+            if (objective == null)
+                throw new ArgumentNullException(nameof(objective));
+            return UpdateCore(context, options, objective);
+        }
+
+        private AutonomousPveCombatUpdate UpdateCore(
+            GameActionContext context,
+            AutonomousPveOptions options,
+            AutonomousPveCombatObjective objective)
+        {
             if (context == null)
                 throw new ArgumentNullException(nameof(context));
             if (options == null)
@@ -295,7 +376,11 @@ namespace Perpetuum.Services.Autonomous
             options.Validate(context.Actor.Id);
 
             DateTime now = DateTime.UtcNow;
-            AutonomousPveCombatGoalState state = LoadOrCreate(context.Actor.Id, options, now);
+            AutonomousPveCombatGoalState state = LoadOrCreate(
+                context,
+                options,
+                objective?.AssignmentKey,
+                now);
             AutonomousPveCombatSnapshot snapshot = _observations.Observe(context, state.TargetEid);
             if (!snapshot.WorldAvailable)
                 return new AutonomousPveCombatUpdate(AutonomousPveCombatUpdateResult.Waiting);
@@ -318,12 +403,13 @@ namespace Perpetuum.Services.Autonomous
                 return Retreat(context, state, snapshot, now, "core_threshold");
 
             if (state.TargetEid <= 0)
-                return SelectTarget(context, options, state, snapshot, now);
+                return SelectTarget(context, options, objective, state, snapshot, now);
 
             AutonomousPveTargetSnapshot target = snapshot.TrackedTarget;
             if (target?.Dead == true)
                 return CompleteTarget(context, state, snapshot, now);
             if (target == null || !target.Visible || !target.Npc || !target.Hostile ||
+                (objective != null && !objective.Matches(target)) ||
                 target.Distance > options.AcquisitionRange)
             {
                 StopActions(context, state, snapshot);
@@ -471,7 +557,7 @@ namespace Perpetuum.Services.Autonomous
             if (lostRobotEid <= 0)
                 return false;
             DateTime now = DateTime.UtcNow;
-            AutonomousPveCombatGoalState state = LoadOrCreate(context.Actor.Id, options, now);
+            AutonomousPveCombatGoalState state = LoadOrCreate(context, options, null, now);
             if (state.LastLostRobotEid == lostRobotEid)
                 return state.LossBudgetReached;
             int losses = checked(state.LossCount + 1);
@@ -519,12 +605,14 @@ namespace Perpetuum.Services.Autonomous
         private AutonomousPveCombatUpdate SelectTarget(
             GameActionContext context,
             AutonomousPveOptions options,
+            AutonomousPveCombatObjective objective,
             AutonomousPveCombatGoalState state,
             AutonomousPveCombatSnapshot snapshot,
             DateTime now)
         {
             AutonomousPveTargetSnapshot target = snapshot.VisibleTargets.FirstOrDefault(candidate =>
                 candidate.Npc && candidate.Hostile && !candidate.Dead &&
+                (objective == null || objective.Matches(candidate)) &&
                 candidate.Distance <= options.AcquisitionRange);
             if (target == null)
             {
@@ -631,25 +719,38 @@ namespace Perpetuum.Services.Autonomous
         }
 
         private AutonomousPveCombatGoalState LoadOrCreate(
-            int characterId,
+            GameActionContext context,
             AutonomousPveOptions options,
+            string assignmentKey,
             DateTime now)
         {
+            int characterId = context.Actor.Id;
             AutonomousPveCombatGoalState state = _goals.Load(characterId);
-            if (state == null)
+            int targetCount = assignmentKey == null ? options.TargetCount : 1;
+            if (state == null || !string.Equals(
+                    state.AssignmentKey,
+                    assignmentKey,
+                    StringComparison.Ordinal))
             {
+                int lossCount = state?.LossCount ?? 0;
+                long lastLostRobotEid = state?.LastLostRobotEid ?? 0;
+                if (state != null)
+                    StopActions(context, state, _observations.Observe(context, state.TargetEid));
                 state = new AutonomousPveCombatGoalState(
                     characterId,
-                    options.TargetCount,
+                    targetCount,
                     0,
                     options.MaxLosses,
-                    0,
-                    "searching",
-                    now);
+                    lossCount,
+                    lossCount >= options.MaxLosses ? "loss_budget_reached" : "searching",
+                    now,
+                    lastLostRobotEid: lastLostRobotEid,
+                    blockedReason: lossCount >= options.MaxLosses ? "loss_budget_reached" : null,
+                    assignmentKey: assignmentKey);
                 Save(state);
                 return state;
             }
-            if (state.TargetCount != options.TargetCount || state.MaxLosses != options.MaxLosses)
+            if (state.TargetCount != targetCount || state.MaxLosses != options.MaxLosses)
                 throw new InvalidOperationException(
                     $"Persistent combat goal for character {characterId} does not match configuration.");
             return state;
@@ -669,7 +770,8 @@ namespace Perpetuum.Services.Autonomous
                 current.LockId == state.LockId &&
                 current.LastLostRobotEid == state.LastLostRobotEid &&
                 current.BlockedReason == state.BlockedReason &&
-                current.EngagementStartedAt == state.EngagementStartedAt)
+                current.EngagementStartedAt == state.EngagementStartedAt &&
+                current.AssignmentKey == state.AssignmentKey)
                 return;
             _goals.Save(state);
         }
@@ -699,6 +801,7 @@ namespace Perpetuum.Services.Autonomous
                 lastLostRobotEid ?? state.LastLostRobotEid,
                 blockedReason,
                 engagementStartedAt,
+                state.AssignmentKey,
                 state.Revision + 1);
         }
     }

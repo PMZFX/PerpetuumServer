@@ -36,6 +36,57 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(2, target.RemainingQuantity);
         }
 
+        [Fact]
+        public void CombatTargetsRequireTheSameMapDataExposedToTheClient()
+        {
+            var supported = new AutonomousMissionTargetSnapshot(
+                1,
+                MissionTargetType.kill_definition,
+                0,
+                true,
+                false,
+                0,
+                200,
+                2,
+                0,
+                8,
+                new Position(100, 120),
+                15);
+            var hiddenMap = new AutonomousMissionTargetSnapshot(
+                1,
+                MissionTargetType.kill_definition,
+                0,
+                true,
+                false,
+                0,
+                200,
+                2,
+                0);
+
+            Assert.True(AutonomousMissionPolicy.IsFieldSupported(supported));
+            Assert.True(supported.HasMapTarget);
+            Assert.False(AutonomousMissionPolicy.IsSupported(hiddenMap));
+        }
+
+        [Fact]
+        public void RandomMissionAvailabilityRequiresExplicitOptIn()
+        {
+            var availability = new[]
+            {
+                new MissionAvailability(MissionCategory.Combat, 0, true, 1, false)
+            };
+
+            Assert.Null(AutonomousMissionPolicy.SelectAvailability(
+                availability,
+                MissionCategory.Combat,
+                0));
+            Assert.NotNull(AutonomousMissionPolicy.SelectAvailability(
+                availability,
+                MissionCategory.Combat,
+                0,
+                allowRandom: true));
+        }
+
         [Theory]
         [InlineData(MissionTargetType.submit_item, 100, 2, 500)]
         [InlineData(MissionTargetType.fetch_item, 0, 2, 500)]

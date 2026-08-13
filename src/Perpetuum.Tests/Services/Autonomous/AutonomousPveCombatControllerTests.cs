@@ -102,6 +102,57 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void MissionAssignmentSelectsOnlyMatchingVisibleDefinitionAndResetsPerProgress()
+        {
+            var observations = new Observations
+            {
+                VisibleTargets = new[]
+                {
+                    Target(10, 5, hostile: true, npc: true, definition: 100),
+                    Target(20, 10, hostile: true, npc: true, definition: 200),
+                    Target(30, 12, hostile: true, npc: false, definition: 200)
+                }
+            };
+            var goals = new GoalStore();
+            var locks = new TargetLocks();
+            var modules = new Modules(observations);
+            GameActionContext context = Context();
+            AutonomousPveOptions options = Options(targetCount: 99, maxLosses: 2);
+            var first = new AutonomousPveCombatObjective(
+                "mission:target:0",
+                200,
+                new Position(10, 0),
+                20);
+
+            AutonomousPveCombatController controller = Controller(observations, goals, locks, modules);
+            AutonomousPveCombatUpdate selected = controller.UpdateObjective(context, options, first);
+
+            Assert.Equal(AutonomousPveCombatUpdateResult.TargetSelected, selected.Result);
+            Assert.Equal(20, selected.TargetEid);
+            Assert.Equal("mission:target:0", goals.State.AssignmentKey);
+            Assert.Equal(1, goals.State.TargetCount);
+
+            controller = Controller(observations, goals, locks, modules);
+            observations.TrackedTarget = Target(
+                20, 10, hostile: true, npc: true, definition: 200);
+            Assert.Equal(
+                AutonomousPveCombatUpdateResult.Acted,
+                controller.UpdateObjective(context, options, first).Result);
+            Assert.Equal(1, locks.LockCalls);
+
+            var next = new AutonomousPveCombatObjective(
+                "mission:target:1",
+                200,
+                new Position(10, 0),
+                20);
+            Assert.Equal(
+                AutonomousPveCombatUpdateResult.TargetSelected,
+                controller.UpdateObjective(context, options, next).Result);
+            Assert.Equal("mission:target:1", goals.State.AssignmentKey);
+            Assert.Equal(0, goals.State.CompletedCount);
+        }
+
+        [Fact]
         public void ArmorThresholdStopsWeaponsAndOwnedLockBeforeRetreat()
         {
             DateTime now = DateTime.UtcNow;
@@ -318,10 +369,12 @@ namespace Perpetuum.Tests.Services.Autonomous
             bool visible = true,
             bool dead = false,
             AutonomousDefenseLockState lockState = AutonomousDefenseLockState.Missing,
-            long lockId = 0)
+            long lockId = 0,
+            int definition = 0)
         {
             return new AutonomousPveTargetSnapshot(
                 eid,
+                definition,
                 new Position(distance, 0),
                 distance,
                 visible,

@@ -1705,6 +1705,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousWorldTravelService>();
             _ = _builder.RegisterType<AutonomousDestinationTravelService>()
                 .As<IAutonomousDestinationTravelService>();
+            _ = _builder.RegisterType<AutonomousPositionTravelService>()
+                .As<IAutonomousPositionTravelService>();
             _ = _builder.RegisterType<AutonomousMiningResupplyService>()
                 .As<IAutonomousMiningResupplyService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()

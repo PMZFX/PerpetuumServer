@@ -102,6 +102,17 @@ namespace Perpetuum.Services.Autonomous
                     if (!actor.Mission.Enabled)
                         throw new InvalidOperationException($"Autonomous mission behavior for character {actor.CharacterId} must be enabled.");
                     actor.Mission.Validate(actor.CharacterId);
+                    if (actor.Mission.GetCategory() == MissionCategory.Combat)
+                    {
+                        if (!actor.Mission.Pve.Enabled)
+                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled mission PvE.");
+                        if (actor.Equipment?.Enabled != true)
+                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled equipment preparation.");
+                        if (actor.Equipment.Slots == null || actor.Equipment.Slots.Count == 0)
+                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require a configured combat fitting.");
+                        if (actor.Equipment.RepairBelowRatio <= actor.Mission.Pve.RetreatArmorRatio)
+                            throw new InvalidOperationException($"Autonomous combat mission repair threshold for character {actor.CharacterId} must exceed its armor retreat threshold.");
+                    }
                 }
                 else if (actor.Mission?.Enabled == true)
                 {
@@ -162,11 +173,16 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int RetrySeconds { get; set; } = 30;
 
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool AllowRandom { get; set; }
+
         [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int ProgressionExtensionId { get; set; }
 
         [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int ProgressionExtensionLevel { get; set; }
+
+        public AutonomousPveOptions Pve { get; set; } = new AutonomousPveOptions();
 
         public MissionCategory GetCategory()
         {
@@ -196,6 +212,9 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous mission progression extension for character {characterId} is invalid.");
             if ((ProgressionExtensionId == 0) != (ProgressionExtensionLevel == 0))
                 throw new InvalidOperationException($"Autonomous mission progression for character {characterId} requires both an extension ID and target level.");
+            if (Pve == null)
+                throw new InvalidOperationException($"Autonomous mission PvE options for character {characterId} cannot be null.");
+            Pve.Validate(characterId);
         }
     }
 

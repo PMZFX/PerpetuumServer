@@ -166,6 +166,48 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
 
+        [Fact]
+        public void CombatMissionRequiresEnabledPveAndARepairableCombatFitting()
+        {
+            var actor = new AutonomousActorDefinition
+            {
+                CharacterId = 19,
+                Behavior = "mission",
+                Mission = new AutonomousMissionOptions
+                {
+                    Enabled = true,
+                    Category = "Combat",
+                    SourceBaseEid = 100
+                }
+            };
+            var configuration = new AutonomousConfiguration {Actors = {actor}};
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            actor.Mission.Pve.Enabled = true;
+            actor.Equipment = new AutonomousEquipmentOptions
+            {
+                Enabled = true,
+                Robot = "arkhe_empty",
+                RepairFacilityEid = 100,
+                RepairBelowRatio = actor.Mission.Pve.RetreatArmorRatio,
+                Slots = new List<AutonomousEquipmentSlotOptions>
+                {
+                    new AutonomousEquipmentSlotOptions
+                    {
+                        Module = "small_laser",
+                        Ammo = "small_laser_crystal",
+                        Component = "Head",
+                        Slot = 0
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+            actor.Equipment.RepairBelowRatio = 0.95;
+            configuration.Validate();
+        }
+
         [Theory]
         [InlineData(99)]
         [InlineData(60001)]

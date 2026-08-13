@@ -86,6 +86,130 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal("complete", goals.State.Phase);
         }
 
+        [Fact]
+        public void CombatMissionTravelsFightsAcrossRestartAndWaitsForAuthoritativeCredit()
+        {
+            var character = new CharacterState {IsDocked = true, DockingBaseEid = 100};
+            var observations = new CombatMissionObservations();
+            var goals = new GoalStore();
+            var world = new CombatPerception();
+            var combat = new CombatService(
+                AutonomousPveCombatUpdateResult.TargetSelected,
+                AutonomousPveCombatUpdateResult.Acted,
+                AutonomousPveCombatUpdateResult.Engaging,
+                AutonomousPveCombatUpdateResult.Complete);
+            var actions = new CombatMissionActions(observations);
+            var undock = new UndockService(character);
+            GameActionContext context = Context();
+            var options = new AutonomousMissionOptions
+            {
+                Enabled = true,
+                Category = "Combat",
+                Level = 0,
+                SourceBaseEid = 100,
+                TargetCount = 1,
+                DockedDwellSeconds = 5,
+                RetrySeconds = 5,
+                AllowRandom = true,
+                Pve = Options().Pve
+            };
+            options.Pve.Enabled = true;
+
+            AutonomousMissionController controller = CombatController(
+                actions,
+                observations,
+                goals,
+                character,
+                undock,
+                new CombatPositionTravel(world),
+                world,
+                combat);
+            controller.Start(context, options);
+
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Acted,
+                controller.Update(context, options, TimeSpan.Zero));
+            Assert.Equal(1, actions.StartCalls);
+
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Acted,
+                controller.Update(context, options, TimeSpan.FromSeconds(5)));
+            Assert.False(character.IsDocked);
+
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Waiting,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+
+            observations.Stage = CombatMissionStage.Kill;
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.Equal(200, combat.LastObjective.RequiredDefinition);
+
+            controller = CombatController(
+                actions,
+                observations,
+                goals,
+                character,
+                undock,
+                new CombatPositionTravel(world),
+                world,
+                combat);
+            controller.Start(context, options);
+
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Acted,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Waiting,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Waiting,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.True(observations.Running);
+            Assert.Equal(0, actions.DeliverCalls);
+            Assert.Equal("combat_waiting_for_mission_credit", goals.State.Phase);
+
+            observations.FinishSuccessfully();
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Complete,
+                controller.Update(context, options, TimeSpan.Zero));
+            Assert.Equal(1, goals.State.CompletedCount);
+            Assert.Equal(1, actions.StartCalls);
+            Assert.Equal(0, actions.DeliverCalls);
+            Assert.Equal(0, actions.AbortCalls);
+        }
+
+        private static AutonomousMissionController CombatController(
+            CombatMissionActions actions,
+            CombatMissionObservations observations,
+            GoalStore goals,
+            CharacterState character,
+            UndockService undock,
+            CombatPositionTravel positionTravel,
+            CombatPerception perception,
+            CombatService combat)
+        {
+            return new AutonomousMissionController(
+                actions,
+                observations,
+                goals,
+                character,
+                new EquipmentService(),
+                new CargoService(),
+                new RelocationService(new CargoService()),
+                undock,
+                new TravelService(character),
+                positionTravel,
+                perception,
+                combat,
+                new ExtensionService(),
+                new Audit());
+        }
+
         private static AutonomousMissionController Controller(
             MissionActions actions,
             MissionObservations observations,
@@ -106,6 +230,9 @@ namespace Perpetuum.Tests.Services.Autonomous
                 relocation,
                 undock,
                 travel,
+                new PositionTravelService(),
+                new PerceptionService(),
+                new CombatService(),
                 new ExtensionService(),
                 new Audit());
         }
@@ -384,6 +511,232 @@ namespace Perpetuum.Tests.Services.Autonomous
             public ExtensionTrainingResult Execute(GameActionContext context, ExtensionTrainingAction action)
             {
                 throw new InvalidOperationException("Progression spending is disabled in this scenario.");
+            }
+        }
+
+        private sealed class PositionTravelService : IAutonomousPositionTravelService
+        {
+            public AutonomousPositionTravelStatus Status => AutonomousPositionTravelStatus.Idle;
+            public int TargetZoneId => 0;
+            public Position TargetPosition => default(Position);
+
+            public bool TryStart(
+                GameActionContext context,
+                int targetZoneId,
+                Position targetPosition,
+                double targetRange,
+                double throttle) => false;
+
+            public AutonomousPositionTravelStatus Update(GameActionContext context, TimeSpan elapsed) =>
+                AutonomousPositionTravelStatus.Idle;
+
+            public void Stop(GameActionContext context)
+            {
+            }
+        }
+
+        private sealed class PerceptionService : IAutonomousPerceptionService
+        {
+            public AutonomousPerceptionSnapshot Observe(GameActionContext context) =>
+                new AutonomousPerceptionSnapshot(true, null, null, null);
+        }
+
+        private sealed class CombatService : IAutonomousPveCombatController
+        {
+            private readonly Queue<AutonomousPveCombatUpdateResult> _results;
+
+            public CombatService(params AutonomousPveCombatUpdateResult[] results)
+            {
+                _results = new Queue<AutonomousPveCombatUpdateResult>(
+                    results ?? Array.Empty<AutonomousPveCombatUpdateResult>());
+            }
+
+            public AutonomousPveCombatObjective LastObjective { get; private set; }
+
+            public AutonomousPveCombatUpdate Update(
+                GameActionContext context,
+                AutonomousPveOptions options) =>
+                new AutonomousPveCombatUpdate(AutonomousPveCombatUpdateResult.Waiting);
+
+            public AutonomousPveCombatUpdate UpdateObjective(
+                GameActionContext context,
+                AutonomousPveOptions options,
+                AutonomousPveCombatObjective objective)
+            {
+                LastObjective = objective;
+                AutonomousPveCombatUpdateResult result = _results.Count > 0
+                    ? _results.Dequeue()
+                    : AutonomousPveCombatUpdateResult.Waiting;
+                return new AutonomousPveCombatUpdate(
+                    result,
+                    900,
+                    result == AutonomousPveCombatUpdateResult.TargetSelected ||
+                    result == AutonomousPveCombatUpdateResult.Approach
+                        ? new Position(105, 100)
+                        : (Position?)null);
+            }
+
+            public void Stop(GameActionContext context)
+            {
+            }
+
+            public bool RecordLoss(
+                GameActionContext context,
+                AutonomousPveOptions options,
+                long lostRobotEid) => false;
+
+            public void AcknowledgeDockedPreparation(GameActionContext context)
+            {
+            }
+
+            public long GetTargetEid(int characterId) => 0;
+            public bool ShouldDeploy(int characterId) => true;
+        }
+
+        private enum CombatMissionStage
+        {
+            Pop,
+            Kill
+        }
+
+        private sealed class CombatMissionObservations : IAutonomousMissionObservationService
+        {
+            public Guid Guid { get; } = Guid.NewGuid();
+            public bool Running { get; set; }
+            public bool Finished { get; private set; }
+            public CombatMissionStage Stage { get; set; }
+
+            public IReadOnlyList<AutonomousMissionSnapshot> ObserveRunning(GameActionContext context)
+            {
+                if (!Running)
+                    return Array.Empty<AutonomousMissionSnapshot>();
+                MissionTargetType type = Stage == CombatMissionStage.Pop
+                    ? MissionTargetType.pop_npc
+                    : MissionTargetType.kill_definition;
+                return new[]
+                {
+                    new AutonomousMissionSnapshot(
+                        Guid,
+                        20,
+                        MissionCategory.Combat,
+                        0,
+                        100,
+                        DateTime.UtcNow.AddHours(1),
+                        new[]
+                        {
+                            new AutonomousMissionTargetSnapshot(
+                                Stage == CombatMissionStage.Pop ? 30 : 31,
+                                type,
+                                0,
+                                true,
+                                false,
+                                0,
+                                Stage == CombatMissionStage.Pop ? 0 : 200,
+                                1,
+                                0,
+                                8,
+                                new Position(100, 100),
+                                10)
+                        })
+                };
+            }
+
+            public AutonomousMissionCompletion ObserveCompletion(
+                GameActionContext context,
+                Guid missionGuid) =>
+                Finished && missionGuid == Guid
+                    ? new AutonomousMissionCompletion(Guid, true, true)
+                    : null;
+
+            public void FinishSuccessfully()
+            {
+                Running = false;
+                Finished = true;
+            }
+        }
+
+        private sealed class CombatMissionActions : IMissionActionService
+        {
+            private readonly CombatMissionObservations _observations;
+
+            public CombatMissionActions(CombatMissionObservations observations)
+            {
+                _observations = observations;
+            }
+
+            public int StartCalls { get; private set; }
+            public int DeliverCalls { get; private set; }
+            public int AbortCalls { get; private set; }
+
+            public MissionOptionsResult ObserveOptions(
+                GameActionContext context,
+                MissionLocationAction action) =>
+                new MissionOptionsResult(
+                    1,
+                    new Dictionary<string, object>(),
+                    new[] {new MissionAvailability(MissionCategory.Combat, 0, true, 1, false)});
+
+            public MissionStartResult Start(GameActionContext context, MissionStartAction action)
+            {
+                StartCalls++;
+                _observations.Running = true;
+                return new MissionStartResult(
+                    _observations.Guid,
+                    new Dictionary<string, object>());
+            }
+
+            public void Deliver(GameActionContext context, MissionGuidAction action) => DeliverCalls++;
+            public void Abort(GameActionContext context, MissionGuidAction action) => AbortCalls++;
+        }
+
+        private sealed class CombatPerception : IAutonomousPerceptionService
+        {
+            public int ZoneId { get; set; } = 8;
+            public Position Position { get; set; } = new Position(0, 0);
+
+            public AutonomousPerceptionSnapshot Observe(GameActionContext context) =>
+                new AutonomousPerceptionSnapshot(false, ZoneId, Position, null);
+        }
+
+        private sealed class CombatPositionTravel : IAutonomousPositionTravelService
+        {
+            private readonly CombatPerception _world;
+            private Position _destination;
+
+            public CombatPositionTravel(CombatPerception world)
+            {
+                _world = world;
+            }
+
+            public AutonomousPositionTravelStatus Status { get; private set; } =
+                AutonomousPositionTravelStatus.Idle;
+            public int TargetZoneId { get; private set; }
+            public Position TargetPosition => _destination;
+
+            public bool TryStart(
+                GameActionContext context,
+                int targetZoneId,
+                Position targetPosition,
+                double targetRange,
+                double throttle)
+            {
+                TargetZoneId = targetZoneId;
+                _destination = targetPosition;
+                Status = AutonomousPositionTravelStatus.SurfaceTravel;
+                return true;
+            }
+
+            public AutonomousPositionTravelStatus Update(GameActionContext context, TimeSpan elapsed)
+            {
+                _world.ZoneId = TargetZoneId;
+                _world.Position = _destination;
+                Status = AutonomousPositionTravelStatus.Arrived;
+                return Status;
+            }
+
+            public void Stop(GameActionContext context)
+            {
+                Status = AutonomousPositionTravelStatus.Idle;
             }
         }
 

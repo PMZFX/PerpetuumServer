@@ -18,6 +18,7 @@ namespace Perpetuum.Services.Autonomous
             long lastLostRobotEid = 0,
             string blockedReason = null,
             DateTime? engagementStartedAt = null,
+            string assignmentKey = null,
             int revision = 0)
         {
             if (characterId <= 0)
@@ -38,6 +39,8 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(lockId));
             if (lastLostRobotEid < 0)
                 throw new ArgumentOutOfRangeException(nameof(lastLostRobotEid));
+            if (assignmentKey != null && assignmentKey.Length > 128)
+                throw new ArgumentOutOfRangeException(nameof(assignmentKey));
             if (revision < 0)
                 throw new ArgumentOutOfRangeException(nameof(revision));
 
@@ -53,6 +56,7 @@ namespace Perpetuum.Services.Autonomous
             LastLostRobotEid = lastLostRobotEid;
             BlockedReason = blockedReason;
             EngagementStartedAt = engagementStartedAt;
+            AssignmentKey = assignmentKey;
             Revision = revision;
         }
 
@@ -68,6 +72,7 @@ namespace Perpetuum.Services.Autonomous
         public long LastLostRobotEid { get; }
         public string BlockedReason { get; }
         public DateTime? EngagementStartedAt { get; }
+        public string AssignmentKey { get; }
         public int Revision { get; }
         public bool Complete => CompletedCount >= TargetCount;
         public bool LossBudgetReached => LossCount >= MaxLosses;
@@ -91,6 +96,7 @@ namespace Perpetuum.Services.Autonomous
                                      max_losses, loss_count, phase, target_eid,
                                      lock_id, last_lost_robot_eid, blocked_reason,
                                      phase_started_at, engagement_started_at,
+                                     assignment_key,
                                      goal_revision
                               from dbo.ai_combat_goal
                               where character_id = @characterId")
@@ -111,6 +117,7 @@ namespace Perpetuum.Services.Autonomous
                     record.GetValue<long?>("last_lost_robot_eid") ?? 0,
                     record.GetValue<string>("blocked_reason"),
                     record.GetValue<DateTime?>("engagement_started_at"),
+                    record.GetValue<string>("assignment_key"),
                     record.GetValue<int>("goal_revision"));
         }
 
@@ -133,6 +140,7 @@ namespace Perpetuum.Services.Autonomous
                                   blocked_reason = @blockedReason,
                                   phase_started_at = @phaseStartedAt,
                                   engagement_started_at = @engagementStartedAt,
+                                  assignment_key = @assignmentKey,
                                   goal_revision = @revision,
                                   updated_at = sysutcdatetime()
                               where character_id = @characterId;
@@ -143,12 +151,14 @@ namespace Perpetuum.Services.Autonomous
                                        max_losses, loss_count, phase, target_eid,
                                        lock_id, last_lost_robot_eid, blocked_reason,
                                        phase_started_at, engagement_started_at,
+                                       assignment_key,
                                        goal_revision)
                                   values
                                       (@characterId, @targetCount, @completedCount,
                                        @maxLosses, @lossCount, @phase, @targetEid,
                                        @lockId, @lastLostRobotEid, @blockedReason,
                                        @phaseStartedAt, @engagementStartedAt,
+                                       @assignmentKey,
                                        @revision);
                               end;
                               commit transaction;")
@@ -164,6 +174,7 @@ namespace Perpetuum.Services.Autonomous
                 .SetParameter("@blockedReason", state.BlockedReason)
                 .SetParameter("@phaseStartedAt", state.PhaseStartedAt)
                 .SetParameter("@engagementStartedAt", state.EngagementStartedAt)
+                .SetParameter("@assignmentKey", state.AssignmentKey)
                 .SetParameter("@revision", state.Revision)
                 .ExecuteNonQuery();
         }

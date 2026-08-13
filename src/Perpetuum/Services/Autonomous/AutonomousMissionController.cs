@@ -20,12 +20,13 @@ namespace Perpetuum.Services.Autonomous
         public static MissionAvailability SelectAvailability(
             IEnumerable<MissionAvailability> options,
             MissionCategory category,
-            int level)
+            int level,
+            bool allowRandom = false)
         {
             if (options == null)
                 throw new ArgumentNullException(nameof(options));
             return options
-                .Where(option => !option.Random &&
+                .Where(option => (allowRandom || !option.Random) &&
                                  option.Category == category &&
                                  option.Level == level &&
                                  option.Available &&
@@ -36,11 +37,26 @@ namespace Perpetuum.Services.Autonomous
 
         public static bool IsSupported(AutonomousMissionTargetSnapshot target)
         {
-            return target != null &&
-                   target.Type == MissionTargetType.fetch_item &&
+            return IsTransportSupported(target) || IsFieldSupported(target);
+        }
+
+        public static bool IsTransportSupported(AutonomousMissionTargetSnapshot target)
+        {
+            return target != null && target.Type == MissionTargetType.fetch_item &&
                    target.Definition > 0 &&
                    target.RemainingQuantity > 0 &&
                    target.DestinationEid > 0;
+        }
+
+        public static bool IsFieldSupported(AutonomousMissionTargetSnapshot target)
+        {
+            if (target == null || !target.HasMapTarget)
+                return false;
+            if (target.Type == MissionTargetType.reach_position ||
+                target.Type == MissionTargetType.pop_npc)
+                return true;
+            return target.Type == MissionTargetType.kill_definition &&
+                   target.Definition > 0 && target.RemainingQuantity > 0;
         }
     }
 
@@ -113,6 +129,9 @@ namespace Perpetuum.Services.Autonomous
         private readonly IRelocateItemsActionService _relocate;
         private readonly IUndockActionService _undock;
         private readonly IAutonomousDestinationTravelService _travel;
+        private readonly IAutonomousPositionTravelService _positionTravel;
+        private readonly IAutonomousPerceptionService _perception;
+        private readonly IAutonomousPveCombatController _combat;
         private readonly IExtensionTrainingActionService _extensions;
         private readonly IAutonomousActorAudit _audit;
         private TimeSpan _dockedElapsed;
@@ -128,6 +147,9 @@ namespace Perpetuum.Services.Autonomous
             IRelocateItemsActionService relocate,
             IUndockActionService undock,
             IAutonomousDestinationTravelService travel,
+            IAutonomousPositionTravelService positionTravel,
+            IAutonomousPerceptionService perception,
+            IAutonomousPveCombatController combat,
             IExtensionTrainingActionService extensions,
             IAutonomousActorAudit audit)
         {
@@ -140,6 +162,9 @@ namespace Perpetuum.Services.Autonomous
             _relocate = relocate ?? throw new ArgumentNullException(nameof(relocate));
             _undock = undock ?? throw new ArgumentNullException(nameof(undock));
             _travel = travel ?? throw new ArgumentNullException(nameof(travel));
+            _positionTravel = positionTravel ?? throw new ArgumentNullException(nameof(positionTravel));
+            _perception = perception ?? throw new ArgumentNullException(nameof(perception));
+            _combat = combat ?? throw new ArgumentNullException(nameof(combat));
             _extensions = extensions ?? throw new ArgumentNullException(nameof(extensions));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         }
@@ -148,6 +173,7 @@ namespace Perpetuum.Services.Autonomous
         {
             Validate(context, options);
             _travel.Stop(context);
+            _positionTravel.Stop(context);
             _dockedElapsed = TimeSpan.FromSeconds(options.DockedDwellSeconds);
             _retryElapsed = TimeSpan.FromSeconds(options.RetrySeconds);
             LoadOrCreate(context, options);
@@ -156,6 +182,8 @@ namespace Perpetuum.Services.Autonomous
         public void Stop(GameActionContext context)
         {
             _travel.Stop(context);
+            _positionTravel.Stop(context);
+            _combat.Stop(context);
             _dockedElapsed = TimeSpan.Zero;
             _retryElapsed = TimeSpan.Zero;
         }
@@ -207,19 +235,34 @@ namespace Perpetuum.Services.Autonomous
                     return Wait(ref state, "mission_blocked", reason, AutonomousMissionUpdateResult.Blocked);
                 }
 
-                if (state.TargetEid != target.DestinationEid)
+                long observedTarget = AutonomousMissionPolicy.IsTransportSupported(target)
+                    ? target.DestinationEid
+                    : target.TargetId;
+                bool returningFromCombat = state.Phase.StartsWith(
+                    "combat_returning",
+                    StringComparison.Ordinal);
+                if (state.TargetEid != observedTarget && !returningFromCombat)
                     Write(ref state, state.WithProgress(
                         "mission_observed",
                         mission.MissionGuid,
-                        target.DestinationEid));
-                return MoveCargoTravelOrDeliver(
-                    context,
-                    options,
-                    character,
-                    mission,
-                    target,
-                    ref state,
-                    elapsed);
+                        observedTarget));
+                return AutonomousMissionPolicy.IsTransportSupported(target)
+                    ? MoveCargoTravelOrDeliver(
+                        context,
+                        options,
+                        character,
+                        mission,
+                        target,
+                        ref state,
+                        elapsed)
+                    : MoveFieldMission(
+                        context,
+                        options,
+                        character,
+                        mission,
+                        target,
+                        ref state,
+                        elapsed);
             }
             catch (PerpetuumException exception)
             {
@@ -292,7 +335,8 @@ namespace Perpetuum.Services.Autonomous
             MissionAvailability selected = AutonomousMissionPolicy.SelectAvailability(
                 optionsResult.Options,
                 state.Category,
-                state.Level);
+                state.Level,
+                options.AllowRandom);
             if (selected == null)
                 return Wait(ref state, "waiting_for_mission", "mission_unavailable");
             MissionStartResult started = _missions.Start(
@@ -303,6 +347,176 @@ namespace Perpetuum.Services.Autonomous
             _audit.Write(context.Actor.Id, "mission_started", AutonomousActorStatus.Active,
                 started.MissionGuid.ToString());
             return AutonomousMissionUpdateResult.Acted;
+        }
+
+        private AutonomousMissionUpdateResult MoveFieldMission(
+            GameActionContext context,
+            AutonomousMissionOptions options,
+            AutonomousMissionCharacterSnapshot character,
+            AutonomousMissionSnapshot mission,
+            AutonomousMissionTargetSnapshot target,
+            ref AutonomousMissionGoalState state,
+            TimeSpan elapsed)
+        {
+            if (character.IsDocked)
+            {
+                _positionTravel.Stop(context);
+                if (target.Type == MissionTargetType.kill_definition)
+                {
+                    _combat.AcknowledgeDockedPreparation(context);
+                    _combat.UpdateObjective(
+                        context,
+                        options.Pve,
+                        CreateCombatObjective(options, mission, target));
+                    if (!_combat.ShouldDeploy(context.Actor.Id))
+                        return Wait(
+                            ref state,
+                            "combat_deployment_blocked",
+                            "combat_goal_not_deployable");
+                }
+                if (character.DockingBaseEid != state.SourceEid)
+                    return LeaveDock(context, options, ref state, state.SourceEid, "combat_returning_to_source");
+                return LeaveDock(context, options, ref state, target.TargetId, "combat_deploying");
+            }
+
+            if (state.Phase.StartsWith("combat_returning", StringComparison.Ordinal))
+                return Travel(context, options, ref state, state.SourceEid, elapsed);
+
+            if (_positionTravel.Status == AutonomousPositionTravelStatus.WorldTravel ||
+                _positionTravel.Status == AutonomousPositionTravelStatus.SurfaceTravel)
+            {
+                AutonomousPositionTravelStatus travelStatus = _positionTravel.Update(context, elapsed);
+                if (travelStatus == AutonomousPositionTravelStatus.WorldTravel ||
+                    travelStatus == AutonomousPositionTravelStatus.SurfaceTravel)
+                    return AutonomousMissionUpdateResult.Travelling;
+                if (IsTerminal(travelStatus) && travelStatus != AutonomousPositionTravelStatus.Arrived)
+                    return ReturnFromCombat(context, options, ref state, elapsed, travelStatus.ToString());
+                _positionTravel.Stop(context);
+            }
+
+            AutonomousPerceptionSnapshot world = _perception.Observe(context);
+            if (world.Docked || !world.ZoneId.HasValue || !world.Position.HasValue)
+                return Wait(ref state, "combat_waiting_for_world", "player_world_unavailable");
+
+            double stagingRange = target.Type == MissionTargetType.kill_definition
+                ? Math.Max(target.TargetPositionRange, options.Pve.AcquisitionRange * 0.75)
+                : target.TargetPositionRange;
+            if (world.ZoneId.Value != target.ZoneId ||
+                world.Position.Value.TotalDistance2D(target.TargetPosition.Value) > stagingRange)
+            {
+                if (!_positionTravel.TryStart(
+                        context,
+                        target.ZoneId,
+                        target.TargetPosition.Value,
+                        stagingRange,
+                        options.Throttle))
+                    return ReturnFromCombat(
+                        context,
+                        options,
+                        ref state,
+                        elapsed,
+                        _positionTravel.Status.ToString());
+                Write(ref state, state.WithProgress(
+                    "combat_travelling_to_objective",
+                    mission.MissionGuid,
+                    target.TargetId));
+                return AutonomousMissionUpdateResult.Travelling;
+            }
+
+            if (target.Type == MissionTargetType.reach_position ||
+                target.Type == MissionTargetType.pop_npc)
+                return Wait(ref state, "combat_waiting_for_mission_progress", "position_reached");
+
+            AutonomousPveCombatObjective objective = CreateCombatObjective(options, mission, target);
+            AutonomousPveCombatUpdate combat = _combat.UpdateObjective(context, options.Pve, objective);
+            switch (combat.Result)
+            {
+                case AutonomousPveCombatUpdateResult.TargetSelected:
+                case AutonomousPveCombatUpdateResult.Approach:
+                    if (combat.TargetPosition.HasValue &&
+                        _positionTravel.TryStart(
+                            context,
+                            target.ZoneId,
+                            combat.TargetPosition.Value,
+                            options.Pve.EngagementRange,
+                            options.Throttle))
+                    {
+                        Write(ref state, state.WithProgress(
+                            "combat_approaching_target",
+                            mission.MissionGuid,
+                            target.TargetId));
+                        return AutonomousMissionUpdateResult.Travelling;
+                    }
+                    return combat.Result == AutonomousPveCombatUpdateResult.TargetSelected
+                        ? AutonomousMissionUpdateResult.Acted
+                        : AutonomousMissionUpdateResult.Waiting;
+
+                case AutonomousPveCombatUpdateResult.Acted:
+                case AutonomousPveCombatUpdateResult.Engaging:
+                    Write(ref state, state.WithProgress(
+                        "combat_engaging",
+                        mission.MissionGuid,
+                        target.TargetId));
+                    return combat.Result == AutonomousPveCombatUpdateResult.Acted
+                        ? AutonomousMissionUpdateResult.Acted
+                        : AutonomousMissionUpdateResult.Waiting;
+
+                case AutonomousPveCombatUpdateResult.Complete:
+                case AutonomousPveCombatUpdateResult.TargetCompleted:
+                    return Wait(
+                        ref state,
+                        "combat_waiting_for_mission_credit",
+                        "authoritative_mission_progress_pending");
+
+                case AutonomousPveCombatUpdateResult.Retreat:
+                case AutonomousPveCombatUpdateResult.Resupply:
+                case AutonomousPveCombatUpdateResult.LossBudgetReached:
+                case AutonomousPveCombatUpdateResult.Blocked:
+                    return ReturnFromCombat(
+                        context,
+                        options,
+                        ref state,
+                        elapsed,
+                        combat.Reason ?? combat.Result.ToString());
+
+                default:
+                    return AutonomousMissionUpdateResult.Waiting;
+            }
+        }
+
+        private static AutonomousPveCombatObjective CreateCombatObjective(
+            AutonomousMissionOptions options,
+            AutonomousMissionSnapshot mission,
+            AutonomousMissionTargetSnapshot target)
+        {
+            string assignmentKey = string.Concat(
+                mission.MissionGuid.ToString("N"),
+                ":",
+                target.TargetId,
+                ":",
+                target.Progress);
+            return new AutonomousPveCombatObjective(
+                assignmentKey,
+                target.Definition,
+                target.TargetPosition,
+                target.TargetPositionRange + options.Pve.AcquisitionRange);
+        }
+
+        private AutonomousMissionUpdateResult ReturnFromCombat(
+            GameActionContext context,
+            AutonomousMissionOptions options,
+            ref AutonomousMissionGoalState state,
+            TimeSpan elapsed,
+            string reason)
+        {
+            _positionTravel.Stop(context);
+            _combat.Stop(context);
+            Write(ref state, state.WithProgress(
+                "combat_returning",
+                state.MissionGuid,
+                state.SourceEid,
+                reason));
+            return Travel(context, options, ref state, state.SourceEid, elapsed);
         }
 
         private AutonomousMissionUpdateResult MoveCargoTravelOrDeliver(
@@ -537,6 +751,14 @@ namespace Perpetuum.Services.Autonomous
                    status == AutonomousDestinationTravelStatus.RouteUnavailable ||
                    status == AutonomousDestinationTravelStatus.Blocked ||
                    status == AutonomousDestinationTravelStatus.TransitionTimedOut;
+        }
+
+        private static bool IsTerminal(AutonomousPositionTravelStatus status)
+        {
+            return status == AutonomousPositionTravelStatus.Arrived ||
+                   status == AutonomousPositionTravelStatus.RouteUnavailable ||
+                   status == AutonomousPositionTravelStatus.Blocked ||
+                   status == AutonomousPositionTravelStatus.TransitionTimedOut;
         }
 
         private static void Validate(GameActionContext context, AutonomousMissionOptions options)

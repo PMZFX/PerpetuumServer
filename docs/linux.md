@@ -199,17 +199,27 @@ the same typed, audited, character-bound mission service. Extension training
 is likewise shared; administrative exceptions come from the acting
 character's account access and never from `GameActionSource`.
 
-The alpha controller deliberately accepts only configured, non-random mission
-options and executes resolved `fetch_item` targets. It moves observed owned
-cargo through the normal relocation service, undocks, travels and docks using
-the existing player-equivalent world transit, and turns in through the shared
-mission service. The mission engine awards ordinary rewards and mission EP.
+The alpha controller accepts configured mission options; random options remain
+disabled unless `Mission.AllowRandom` is explicitly enabled. It executes
+resolved `fetch_item` transport targets and the conservative combat sequence
+`reach_position`/`pop_npc`/`kill_definition`. It moves observed owned cargo
+through the normal relocation service, while field objectives use only the
+definition, zone, position, and range present in the same target dictionary
+sent to the client. Ordinary movement, public teleport routing, target locks,
+weapons, ammunition, and mission processing remain authoritative. The mission
+controller never writes kill progress or completes a target itself; it waits
+for the mission engine to award ordinary rewards and mission EP.
 After a configured number of successes, the controller may quote and train a
 configured extension only when the actor has the ordinary prerequisites,
 credits, and EP. Unsupported targets, missing cargo, unavailable missions, and
-insufficient progression resources become durable wait states.
+insufficient progression resources become durable wait states. The alpha does
+not automatically abort unsupported or stalled missions.
 
 Apply `database/overlays/010_ai_mission_goal.sql` before enabling this behavior.
+Combat missions additionally require overlays
+`011_ai_combat_goal.sql` and `012_ai_combat_assignment.sql`, enabled equipment
+preparation, a configured combat fitting, and a repair threshold above the
+mission PvE armor-retreat threshold.
 The row records intent, accepted GUID, observed destination, success count, and
 blocked reason. On restart the controller reconciles it with the character's
 running mission and own mission history before acting, preventing a persisted
@@ -229,11 +239,20 @@ phase from authorizing or duplicating work.
     "Throttle": 0.45,
     "DockedDwellSeconds": 5,
     "RetrySeconds": 30,
+    "AllowRandom": false,
     "ProgressionExtensionId": 0,
     "ProgressionExtensionLevel": 0
   }
 }
 ```
+
+For a combat mission actor, set `Category` to `Combat`, opt in to
+`AllowRandom` only when the character should accept the random option shown by
+the normal mission-options response, and configure `Mission.Pve` with the same
+bounds documented below for `Patrol.Pve`. Equipment preparation runs while
+docked before each deployment. A durable combat assignment key consists only
+of mission GUID, target ID, and observed progress, so restart can resume a lock
+or engagement without treating tactical state as mission credit.
 
 The opt-in `manufacturer` behavior is the first narrow execution loop. It
 requires a dedicated character, a target definition, quantity, and mill
@@ -589,6 +608,13 @@ action; it cannot materialize a target, award loot or progression, or prove a
 mission kill. The alpha counts an engagement completion only after the selected
 target is observed dead following weapon engagement. Ordinary game rewards and
 mission credit remain authoritative.
+
+Apply `database/overlays/012_ai_combat_assignment.sql` when using the same
+tactical controller for combat missions. The nullable assignment key resets
+target/lock intent when authoritative mission progress advances, while
+preserving the configured loss budget. Selection is additionally restricted to
+the client-visible mission definition and map area; mission NPC ownership is
+not read as hidden targeting information.
 
 ```json
 {
