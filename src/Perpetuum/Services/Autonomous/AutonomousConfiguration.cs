@@ -82,6 +82,36 @@ namespace Perpetuum.Services.Autonomous
                     actor.Manufacturer.Validate(actor.CharacterId);
                 }
 
+                if (string.Equals(actor.Behavior?.Trim(), "player", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Player == null)
+                        throw new InvalidOperationException($"Autonomous player options for character {actor.CharacterId} cannot be null.");
+                    actor.Player.Validate(actor.CharacterId);
+                    IReadOnlyList<string> roles = actor.Player.GetRoles();
+                    if (roles.Contains("mining"))
+                    {
+                        if (actor.Mining == null)
+                            throw new InvalidOperationException($"Autonomous player mining options for character {actor.CharacterId} cannot be null.");
+                        actor.Mining.Validate(actor.CharacterId);
+                    }
+                    if (roles.Contains("trader"))
+                    {
+                        if (actor.Trader == null)
+                            throw new InvalidOperationException($"Autonomous player trader options for character {actor.CharacterId} cannot be null.");
+                        actor.Trader.Validate(actor.CharacterId);
+                    }
+                    if (roles.Contains("manufacturer"))
+                    {
+                        if (actor.Manufacturer == null)
+                            throw new InvalidOperationException($"Autonomous player manufacturer options for character {actor.CharacterId} cannot be null.");
+                        actor.Manufacturer.Validate(actor.CharacterId);
+                    }
+                    if (roles.Contains("equipment") && actor.Equipment?.Enabled != true)
+                        throw new InvalidOperationException($"Autonomous player equipment role for character {actor.CharacterId} must be enabled.");
+                    if (roles.Contains("mission") && actor.Mission?.Enabled != true)
+                        throw new InvalidOperationException($"Autonomous player mission role for character {actor.CharacterId} must be enabled.");
+                }
+
                 if (string.Equals(actor.Behavior?.Trim(), "equipment", StringComparison.OrdinalIgnoreCase))
                 {
                     if (actor.Equipment == null)
@@ -146,6 +176,55 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousEquipmentOptions Equipment { get; set; } = new AutonomousEquipmentOptions();
 
         public AutonomousMissionOptions Mission { get; set; } = new AutonomousMissionOptions();
+
+        public AutonomousPlayerOptions Player { get; set; } = new AutonomousPlayerOptions();
+    }
+
+    public sealed class AutonomousPlayerOptions
+    {
+        private static readonly HashSet<string> SupportedRoles =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "equipment",
+                "mission",
+                "mining",
+                "trader",
+                "manufacturer"
+            };
+
+        public List<string> Roles { get; set; } = new List<string>();
+
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MinimumRoleSeconds { get; set; } = 30;
+
+        [DefaultValue(1800), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumRoleSeconds { get; set; } = 1800;
+
+        [DefaultValue(true), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool RepeatCompletedMissions { get; set; } = true;
+
+        public IReadOnlyList<string> GetRoles()
+        {
+            return (Roles ?? new List<string>())
+                .Select(role => role?.Trim().ToLowerInvariant())
+                .ToList();
+        }
+
+        public void Validate(int characterId)
+        {
+            IReadOnlyList<string> roles = GetRoles();
+            if (roles.Count == 0 || roles.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidOperationException($"Autonomous player for character {characterId} requires at least one role.");
+            if (roles.Any(role => !SupportedRoles.Contains(role)))
+                throw new InvalidOperationException($"Autonomous player for character {characterId} contains an unsupported role.");
+            if (roles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != roles.Count)
+                throw new InvalidOperationException($"Autonomous player roles for character {characterId} must be distinct.");
+            if (MinimumRoleSeconds < 0 || MinimumRoleSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous player minimum role duration for character {characterId} must be between 0 and 3600 seconds.");
+            if (MaximumRoleSeconds < 5 || MaximumRoleSeconds > 86400 ||
+                MaximumRoleSeconds <= MinimumRoleSeconds)
+                throw new InvalidOperationException($"Autonomous player maximum role duration for character {characterId} must exceed its minimum and be at most 86400 seconds.");
+        }
     }
 
     public sealed class AutonomousMissionOptions

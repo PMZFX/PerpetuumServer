@@ -542,5 +542,45 @@ namespace Perpetuum.Tests.Services.Autonomous
                 AutonomousMiningSurveyPolicy.GetMaximumLegDistance(options.SurveyStepDistance) <
                 AutonomousNavigationService.MaximumStartDistance);
         }
+
+        [Fact]
+        public void PlayerRolePlanIsExplicitDistinctAndBounded()
+        {
+            var options = new AutonomousPlayerOptions();
+            Assert.Throws<InvalidOperationException>(() => options.Validate(30));
+
+            options.Roles.Add("mining");
+            options.Roles.Add("MINING");
+            Assert.Throws<InvalidOperationException>(() => options.Validate(30));
+
+            options.Roles.RemoveAt(1);
+            options.MaximumRoleSeconds = options.MinimumRoleSeconds;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(30));
+
+            options.MaximumRoleSeconds = 60;
+            options.Validate(30);
+            Assert.Equal(new[] {"mining"}, options.GetRoles());
+        }
+
+        [Fact]
+        public void PlayerValidatesEverySelectedRoleBeforeHosting()
+        {
+            var definition = new AutonomousActorDefinition
+            {
+                CharacterId = 30,
+                Behavior = "player",
+                Player = new AutonomousPlayerOptions
+                {
+                    Roles = new List<string> {"mining", "mission"}
+                }
+            };
+            var configuration = new AutonomousConfiguration {Actors = {definition}};
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            definition.Mission.Enabled = true;
+            definition.Mission.SourceBaseEid = 100;
+            configuration.Validate();
+        }
     }
 }

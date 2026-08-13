@@ -140,6 +140,55 @@ step, an actor must obtain a character-specific quote and execute it through
 the shared action service. This separation lets long-term planners be replaced
 or extended without creating a second, privileged gameplay implementation.
 
+The opt-in `player` behavior connects the proven role controllers into one
+durable breadth-first character loop. `Player.Roles` is an explicit ordered
+subset of `equipment`, `mission`, `mining`, `trader`, and `manufacturer`.
+Each child still performs its own normal observations, quotes, and shared
+gameplay actions; the player behavior only decides which child owns the next
+update. It persists the active role, plan identity, start time, field-work
+observation, transition counts, and last transition reason in
+`dbo.ai_player_state`. Apply `database/overlays/014_ai_player_state.sql` before
+selecting this behavior.
+
+A role cannot change while the character is in the world or while an accepted
+mission or purchased trade shipment is outstanding. Mining and trading count
+as complete only after the character has left a terminal and returned; mission
+completion returns to the configured source first; equipment waits for a real
+ready fitting; manufacturing waits for its durable completion or demand-wait
+phase. A role that cannot begin due to unavailable demand, missions, materials,
+money, facilities, or equipment may yield after `MaximumRoleSeconds`, but only
+at a safe docked checkpoint. Its durable goal remains available for the next
+pass. Completed mission goals may be cleared for another ordinary mission;
+mission progression waits are retained and never treated as completion.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "player",
+  "Player": {
+    "Roles": [
+      "equipment",
+      "mission",
+      "mining",
+      "trader",
+      "manufacturer"
+    ],
+    "MinimumRoleSeconds": 30,
+    "MaximumRoleSeconds": 1800,
+    "RepeatCompletedMissions": true
+  },
+  "Equipment": { "Enabled": true },
+  "Mission": { "Enabled": true }
+}
+```
+
+The abbreviated example shows scheduling only. Every selected role must also
+have its complete valid role section described below; choosing `player` does
+not relax any role validation. Persisted plan identity intentionally prevents
+silently reordering a live character's roles. Operators must inspect and
+explicitly migrate its `ai_player_state` row before changing that plan.
+
 Docked equipment lifecycle support is opt-in through an actor's `Equipment`
 section. It observes only that character's current public container, owned
 robots, fitting, damage, cargo capacity, and loaded ammunition. On each retry

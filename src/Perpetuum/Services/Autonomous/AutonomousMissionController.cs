@@ -580,6 +580,15 @@ namespace Perpetuum.Services.Autonomous
             AutonomousMissionGoalState state,
             TimeSpan elapsed)
         {
+            if (!character.IsDocked)
+                return Travel(context, options, ref state, state.SourceEid, elapsed);
+            if (character.DockingBaseEid != state.SourceEid)
+                return LeaveDock(
+                    context,
+                    options,
+                    ref state,
+                    state.SourceEid,
+                    "returning_to_mission_source");
             if (options.ProgressionExtensionId <= 0)
             {
                 Write(ref state, state.WithProgress("complete"));
