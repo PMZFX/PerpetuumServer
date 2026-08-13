@@ -35,6 +35,7 @@ namespace Perpetuum.Services.Autonomous
         AutonomousActorStatus Status { get; }
         AutonomousActorSnapshot Snapshot { get; }
 
+        bool CheckControlOwnership();
         void Start();
         void Stop();
         void Update(TimeSpan elapsed);

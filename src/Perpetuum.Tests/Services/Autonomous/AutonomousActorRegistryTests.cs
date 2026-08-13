@@ -40,6 +40,7 @@ namespace Perpetuum.Tests.Services.Autonomous
             public AutonomousActorSnapshot Snapshot =>
                 new AutonomousActorSnapshot(CharacterId, "test", Status, null);
 
+            public bool CheckControlOwnership() => true;
             public void Start() { }
             public void Stop() { }
             public void Update(TimeSpan elapsed) { }

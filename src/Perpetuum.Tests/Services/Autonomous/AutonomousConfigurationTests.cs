@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Newtonsoft.Json;
 using Perpetuum.Services.Autonomous;
 using Perpetuum.Zones.Terrains.Materials;
 using Xunit;
@@ -19,6 +21,149 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(500, configuration.TickIntervalMilliseconds);
             Assert.Equal(3, configuration.MaxConsecutiveFailures);
             Assert.Empty(configuration.Actors);
+            Assert.False(configuration.PopulationLab.Enabled);
+            Assert.Equal(100, configuration.PopulationLab.MaximumActors);
+            Assert.Equal(25, configuration.PopulationLab.MaximumActorUpdatesPerTick);
+        }
+
+        [Fact]
+        public void PopulationCohortsExpandExplicitCharactersFromIndependentArchetypes()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Enabled = true,
+                PopulationLab = new AutonomousPopulationLabOptions
+                {
+                    Enabled = true,
+                    MaximumActors = 10,
+                    Archetypes =
+                    {
+                        ["miner"] = new AutonomousActorDefinition
+                        {
+                            Behavior = "mining",
+                            Mining = new AutonomousMiningOptions { Material = "Titan" }
+                        },
+                        ["scout"] = new AutonomousActorDefinition
+                        {
+                            Behavior = "patrol"
+                        }
+                    },
+                    Cohorts =
+                    {
+                        new AutonomousPopulationCohortOptions
+                        {
+                            Name = "miners",
+                            Archetype = "miner",
+                            CharacterIds = { 101, 102 }
+                        },
+                        new AutonomousPopulationCohortOptions
+                        {
+                            Name = "scouts",
+                            Archetype = "scout",
+                            CharacterIds = { 103 }
+                        }
+                    }
+                }
+            };
+
+            configuration.Validate();
+            IReadOnlyList<AutonomousActorDefinition> actors = configuration.ResolveActorDefinitions();
+
+            Assert.Equal(new[] {101, 102, 103}, actors.Select(actor => actor.CharacterId));
+            Assert.Equal(new[] {"mining", "mining", "patrol"}, actors.Select(actor => actor.Behavior));
+            Assert.NotSame(actors[0], actors[1]);
+            actors[0].Mining.Material = "Crude";
+            Assert.Equal("Titan", actors[1].Mining.Material);
+        }
+
+        [Fact]
+        public void PopulationLabRejectsDuplicateOrImplicitCharacterOwnership()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                PopulationLab = new AutonomousPopulationLabOptions
+                {
+                    Enabled = true,
+                    MaximumActors = 10,
+                    Archetypes =
+                    {
+                        ["worker"] = new AutonomousActorDefinition()
+                    },
+                    Cohorts =
+                    {
+                        new AutonomousPopulationCohortOptions
+                        {
+                            Name = "one",
+                            Archetype = "worker",
+                            CharacterIds = { 201 }
+                        },
+                        new AutonomousPopulationCohortOptions
+                        {
+                            Name = "two",
+                            Archetype = "worker",
+                            CharacterIds = { 201 }
+                        }
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+            configuration.PopulationLab.Cohorts[1].CharacterIds[0] = 202;
+            configuration.PopulationLab.Archetypes["worker"].CharacterId = 999;
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
+        [Fact]
+        public void DisabledPopulationLabDoesNotExpandConfiguredCohorts()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors = { new AutonomousActorDefinition { CharacterId = 301 } },
+                PopulationLab = new AutonomousPopulationLabOptions
+                {
+                    Archetypes = { ["worker"] = new AutonomousActorDefinition() },
+                    Cohorts =
+                    {
+                        new AutonomousPopulationCohortOptions
+                        {
+                            Name = "disabled",
+                            Archetype = "worker",
+                            CharacterIds = { 302, 303 }
+                        }
+                    }
+                }
+            };
+
+            configuration.Validate();
+
+            Assert.Equal(301, Assert.Single(configuration.ResolveActorDefinitions()).CharacterId);
+        }
+
+        [Fact]
+        public void PopulationManifestDeserializesWithSafeDefaults()
+        {
+            const string json = @"{
+                'Enabled': true,
+                'PopulationLab': {
+                    'Enabled': true,
+                    'MaximumActors': 10,
+                    'Archetypes': {
+                        'scout': { 'CharacterId': 0, 'Behavior': 'patrol' }
+                    },
+                    'Cohorts': [
+                        { 'Name': 'scouts', 'Archetype': 'scout', 'CharacterIds': [401, 402] }
+                    ]
+                }
+            }";
+
+            AutonomousConfiguration configuration =
+                JsonConvert.DeserializeObject<AutonomousConfiguration>(json);
+
+            configuration.Validate();
+            Assert.Equal(25, configuration.PopulationLab.MaximumActorUpdatesPerTick);
+            Assert.Equal(60, configuration.PopulationLab.SnapshotIntervalSeconds);
+            Assert.Equal(new[] {401, 402}, configuration.ResolveActorDefinitions()
+                .Select(actor => actor.CharacterId));
         }
 
         [Fact]
