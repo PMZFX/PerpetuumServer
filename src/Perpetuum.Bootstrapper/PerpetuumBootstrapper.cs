@@ -1676,6 +1676,11 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<DatabaseAutonomousMissionGoalStore>()
                 .As<IAutonomousMissionGoalStore>()
                 .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousPlayerStateStore>()
+                .As<IAutonomousPlayerStateStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousPlayerCharacterObservationService>()
+                .As<IAutonomousPlayerCharacterObservationService>();
             _ = _builder.RegisterType<DatabaseAutonomousPveCombatGoalStore>()
                 .As<IAutonomousPveCombatGoalStore>()
                 .SingleInstance();
@@ -1725,6 +1730,22 @@ namespace Perpetuum.Bootstrapper
                 .Keyed<IAutonomousActorBehavior>("equipment");
             _ = _builder.RegisterType<MissionAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("mission");
+            _ = _builder.Register<AutonomousPlayerRoleBehaviorFactory>(c =>
+            {
+                IComponentContext context = c.Resolve<IComponentContext>();
+                return (role, definition) =>
+                {
+                    string roleName = role?.Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(roleName) || roleName == "player" ||
+                        !context.IsRegisteredWithKey<IAutonomousActorBehavior>(roleName))
+                        throw new InvalidOperationException($"Unknown autonomous player role '{roleName}'.");
+
+                    return context.ResolveKeyed<IAutonomousActorBehavior>(roleName,
+                        new TypedParameter(typeof(AutonomousActorDefinition), definition));
+                };
+            }).SingleInstance();
+            _ = _builder.RegisterType<PlayerAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("player");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();

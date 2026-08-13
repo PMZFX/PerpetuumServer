@@ -78,6 +78,21 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(1, actions.DeliverCalls);
 
             Assert.Equal(
+                AutonomousMissionUpdateResult.Waiting,
+                controller.Update(context, options, TimeSpan.Zero));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Acted,
+                controller.Update(context, options, TimeSpan.FromSeconds(5)));
+            Assert.False(character.IsDocked);
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.True(character.IsDocked);
+            Assert.Equal(100, character.DockingBaseEid);
+            Assert.Equal(
                 AutonomousMissionUpdateResult.Complete,
                 controller.Update(context, options, TimeSpan.Zero));
             Assert.Equal(1, actions.StartCalls);
@@ -174,6 +189,14 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal("combat_waiting_for_mission_credit", goals.State.Phase);
 
             observations.FinishSuccessfully();
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.Zero));
+            Assert.Equal(
+                AutonomousMissionUpdateResult.Travelling,
+                controller.Update(context, options, TimeSpan.FromSeconds(1)));
+            Assert.True(character.IsDocked);
+            Assert.Equal(100, character.DockingBaseEid);
             Assert.Equal(
                 AutonomousMissionUpdateResult.Complete,
                 controller.Update(context, options, TimeSpan.Zero));
