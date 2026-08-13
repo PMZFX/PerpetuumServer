@@ -76,6 +76,12 @@ namespace Perpetuum.Services.Autonomous
                 {
                     if (actor.Equipment == null)
                         throw new InvalidOperationException($"Autonomous equipment options for character {actor.CharacterId} cannot be null.");
+                    if (!actor.Equipment.Enabled)
+                        throw new InvalidOperationException($"Autonomous equipment behavior for character {actor.CharacterId} must be enabled.");
+                    actor.Equipment.Validate(actor.CharacterId);
+                }
+                else if (actor.Equipment?.Enabled == true)
+                {
                     actor.Equipment.Validate(actor.CharacterId);
                 }
             }
@@ -108,6 +114,9 @@ namespace Perpetuum.Services.Autonomous
 
     public sealed class AutonomousEquipmentOptions
     {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
         public string Robot { get; set; }
 
         public long RepairFacilityEid { get; set; }
@@ -129,6 +138,8 @@ namespace Perpetuum.Services.Autonomous
 
         public void Validate(int characterId)
         {
+            if (!Enabled)
+                return;
             if (string.IsNullOrWhiteSpace(Robot))
                 throw new InvalidOperationException($"Autonomous equipment for character {characterId} requires a robot definition name.");
             if (RepairFacilityEid <= 0)
@@ -178,6 +189,7 @@ namespace Perpetuum.Services.Autonomous
     public sealed class AutonomousEquipmentSlotOptions
     {
         public string Module { get; set; }
+        public string Ammo { get; set; }
         public string Component { get; set; }
         public int Slot { get; set; }
 

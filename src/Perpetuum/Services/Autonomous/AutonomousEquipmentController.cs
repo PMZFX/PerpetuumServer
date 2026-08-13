@@ -34,6 +34,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousEquipmentGoalStore _goals;
         private readonly ISelectActiveRobotActionService _selectRobot;
         private readonly IRobotFittingActionService _fitting;
+        private readonly IEquipAmmoActionService _equipAmmo;
         private readonly IProductionRepairActionService _repair;
         private readonly IAutonomousEquipmentProcurementService _procurement;
         private readonly IAutonomousActorAudit _audit;
@@ -44,6 +45,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousEquipmentGoalStore goals,
             ISelectActiveRobotActionService selectRobot,
             IRobotFittingActionService fitting,
+            IEquipAmmoActionService equipAmmo,
             IProductionRepairActionService repair,
             IAutonomousEquipmentProcurementService procurement,
             IAutonomousActorAudit audit)
@@ -53,6 +55,7 @@ namespace Perpetuum.Services.Autonomous
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
             _selectRobot = selectRobot ?? throw new ArgumentNullException(nameof(selectRobot));
             _fitting = fitting ?? throw new ArgumentNullException(nameof(fitting));
+            _equipAmmo = equipAmmo ?? throw new ArgumentNullException(nameof(equipAmmo));
             _repair = repair ?? throw new ArgumentNullException(nameof(repair));
             _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
@@ -98,6 +101,14 @@ namespace Perpetuum.Services.Autonomous
                             ref state,
                             directive,
                             "missing_module");
+
+                    case AutonomousEquipmentDirectiveType.MissingAmmo:
+                        return HandleMissingSupply(
+                            context,
+                            options,
+                            ref state,
+                            directive,
+                            "missing_ammo");
 
                     case AutonomousEquipmentDirectiveType.SelectRobot:
                         WriteProgress(ref state, "selecting_robot", directive.RobotEid);
@@ -148,6 +159,18 @@ namespace Perpetuum.Services.Autonomous
                         WriteProgress(ref state, "module_fitted", directive.RobotEid);
                         return AutonomousEquipmentUpdateResult.Acted;
 
+                    case AutonomousEquipmentDirectiveType.LoadAmmo:
+                        WriteProgress(ref state, "loading_ammo", directive.RobotEid);
+                        _equipAmmo.Execute(
+                            context,
+                            new EquipAmmoAction(
+                                observation.PublicContainerEid,
+                                directive.RobotEid,
+                                directive.ModuleEid,
+                                directive.ItemEid));
+                        WriteProgress(ref state, "ammo_loaded", directive.RobotEid);
+                        return AutonomousEquipmentUpdateResult.Acted;
+
                     default:
                         WriteProgress(ref state, "ready", directive.RobotEid);
                         return AutonomousEquipmentUpdateResult.Ready;
@@ -176,10 +199,18 @@ namespace Perpetuum.Services.Autonomous
             {
                 EntityDefault module = _entityDefaults.GetByName(slot.Module);
                 module.ThrowIfEqual(EntityDefault.None, ErrorCodes.DefinitionNotSupported);
+                int ammoDefinition = 0;
+                if (!string.IsNullOrWhiteSpace(slot.Ammo))
+                {
+                    EntityDefault ammo = _entityDefaults.GetByName(slot.Ammo);
+                    ammo.ThrowIfEqual(EntityDefault.None, ErrorCodes.DefinitionNotSupported);
+                    ammoDefinition = ammo.Definition;
+                }
                 return new AutonomousEquipmentSlotRequirement(
                     module.Definition,
                     slot.GetComponentType(),
-                    slot.Slot);
+                    slot.Slot,
+                    ammoDefinition);
             });
             return new AutonomousEquipmentTemplate(
                 robot.Definition,

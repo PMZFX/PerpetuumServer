@@ -41,6 +41,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly ITargetLockActionService _targetLockActionService;
         private readonly IModuleActionService _moduleActionService;
         private readonly IAutonomousActorStateStore _actorStateStore;
+        private readonly IAutonomousEquipmentRecoveryCoordinator _equipmentRecovery;
         private readonly IAutonomousActorAudit _audit;
         private AutonomousDefensiveEngagement _defense;
         private AutonomousRobotRecoveryTracker _recoveryTracker;
@@ -64,6 +65,7 @@ namespace Perpetuum.Services.Autonomous
             ITargetLockActionService targetLockActionService,
             IModuleActionService moduleActionService,
             IAutonomousActorStateStore actorStateStore,
+            IAutonomousEquipmentRecoveryCoordinator equipmentRecovery,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
@@ -75,6 +77,7 @@ namespace Perpetuum.Services.Autonomous
             _targetLockActionService = targetLockActionService ?? throw new ArgumentNullException(nameof(targetLockActionService));
             _moduleActionService = moduleActionService ?? throw new ArgumentNullException(nameof(moduleActionService));
             _actorStateStore = actorStateStore ?? throw new ArgumentNullException(nameof(actorStateStore));
+            _equipmentRecovery = equipmentRecovery ?? throw new ArgumentNullException(nameof(equipmentRecovery));
             _audit = audit;
         }
 
@@ -141,18 +144,27 @@ namespace Perpetuum.Services.Autonomous
         public void Update(GameActionContext context, TimeSpan elapsed)
         {
             _stateElapsed += elapsed;
-
-            if (HandleRobotRecovery(context, false))
-                return;
-
             if (context.Actor.IsDocked)
             {
+                HandleRobotRecovery(context, false);
+                if (!_equipmentRecovery.PrepareDocked(
+                        context,
+                        _definition.Equipment,
+                        _recoveryTracker,
+                        Name,
+                        context.Actor.ActiveRobotEid))
+                    return;
+                _expectedRobotEid = _recoveryTracker.ExpectedRobotEid;
+                _robotRecoveryRequired = _recoveryTracker.RecoveryRequired;
                 _damageMonitor.Reset();
                 _defense?.Reset();
                 _defenseLockOwned = false;
                 UpdateDocked(context);
                 return;
             }
+
+            if (HandleRobotRecovery(context, false))
+                return;
 
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player == null)

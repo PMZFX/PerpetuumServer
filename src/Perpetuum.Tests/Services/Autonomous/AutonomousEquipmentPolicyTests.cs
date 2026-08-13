@@ -107,6 +107,55 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void ConfiguredMissingAmmoBecomesSupplyRequirement()
+        {
+            var template = new AutonomousEquipmentTemplate(
+                1000,
+                new[]
+                {
+                    new AutonomousEquipmentSlotRequirement(
+                        2000,
+                        RobotComponentType.Head,
+                        1,
+                        4000)
+                });
+
+            AutonomousEquipmentDirective directive = AutonomousEquipmentPolicy.Evaluate(
+                Snapshot(true, Robot(active: true, modules: new[] {Module(20, 2000)})),
+                template);
+
+            Assert.Equal(AutonomousEquipmentDirectiveType.MissingAmmo, directive.Type);
+            Assert.Equal(4000, directive.Definition);
+        }
+
+        [Fact]
+        public void ObservedLooseAmmoTargetsTheFittedModule()
+        {
+            var template = new AutonomousEquipmentTemplate(
+                1000,
+                new[]
+                {
+                    new AutonomousEquipmentSlotRequirement(
+                        2000,
+                        RobotComponentType.Head,
+                        1,
+                        4000)
+                });
+            var looseAmmo = new AutonomousEquipmentItemSnapshot(40, 4000, 20, 1);
+
+            AutonomousEquipmentDirective directive = AutonomousEquipmentPolicy.Evaluate(
+                Snapshot(
+                    true,
+                    Robot(active: true, modules: new[] {Module(20, 2000)}),
+                    new[] {looseAmmo}),
+                template);
+
+            Assert.Equal(AutonomousEquipmentDirectiveType.LoadAmmo, directive.Type);
+            Assert.Equal(20, directive.ModuleEid);
+            Assert.Equal(40, directive.ItemEid);
+        }
+
+        [Fact]
         public void GoalProgressIsDurableAndMonotonic()
         {
             var initial = new AutonomousEquipmentGoalState(7, 1000, "observe");

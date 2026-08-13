@@ -62,7 +62,7 @@ namespace Perpetuum.Tests.Services.Autonomous
                 goals,
                 selection,
                 fitting,
-                repair);
+                repair: repair);
 
             Assert.Equal(AutonomousEquipmentUpdateResult.Blocked, controller.Update(Context(), Options()));
             int writesAfterFirstUpdate = goals.SaveCount;
@@ -108,11 +108,36 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(1, fitting.Calls);
         }
 
+        [Fact]
+        public void ConfiguredAmmoLoadsOnlyFromFreshlyObservedInventory()
+        {
+            var looseAmmo = new AutonomousEquipmentItemSnapshot(40, 3000, 10, 1);
+            var observation = new AutonomousEquipmentSnapshot(
+                true,
+                50,
+                10,
+                new[] {Robot(active: true, modules: new[] {Module()})},
+                new[] {looseAmmo});
+            var equipAmmo = new RecordingEquipAmmoService();
+            AutonomousEquipmentOptions options = Options();
+            options.Slots[0].Ammo = "ammo";
+            AutonomousEquipmentController controller = Controller(
+                new QueueObservationService(observation),
+                new RecordingGoalStore(),
+                equipAmmo: equipAmmo);
+
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(1, equipAmmo.Calls);
+            Assert.Equal(20, equipAmmo.Action.ModuleEid);
+            Assert.Equal(40, equipAmmo.Action.AmmoEid);
+        }
+
         private static AutonomousEquipmentController Controller(
             IAutonomousEquipmentObservationService observations,
             IAutonomousEquipmentGoalStore goals,
             ISelectActiveRobotActionService selection = null,
             IRobotFittingActionService fitting = null,
+            IEquipAmmoActionService equipAmmo = null,
             IProductionRepairActionService repair = null,
             IAutonomousEquipmentProcurementService procurement = null)
         {
@@ -122,6 +147,7 @@ namespace Perpetuum.Tests.Services.Autonomous
                 goals,
                 selection ?? new RecordingSelectService(),
                 fitting ?? new RecordingFittingService(),
+                equipAmmo ?? new RecordingEquipAmmoService(),
                 repair ?? new RecordingRepairService(),
                 procurement ?? new RecordingProcurementService(
                     AutonomousEquipmentProcurement.For(AutonomousEquipmentProcurementResult.Disabled)),
@@ -151,6 +177,7 @@ namespace Perpetuum.Tests.Services.Autonomous
         {
             return new AutonomousEquipmentOptions
             {
+                Enabled = true,
                 Robot = "robot",
                 RepairFacilityEid = 400,
                 Slots = new List<AutonomousEquipmentSlotOptions>
@@ -209,7 +236,8 @@ namespace Perpetuum.Tests.Services.Autonomous
             private static readonly EntityDefault[] Defaults =
             {
                 new EntityDefault {Definition = 1000, Name = "robot"},
-                new EntityDefault {Definition = 2000, Name = "module"}
+                new EntityDefault {Definition = 2000, Name = "module"},
+                new EntityDefault {Definition = 3000, Name = "ammo"}
             };
 
             public bool Exists(int definition) => Get(definition) != EntityDefault.None;
@@ -287,6 +315,19 @@ namespace Perpetuum.Tests.Services.Autonomous
             public ProductionRepairResult Execute(GameActionContext context, ProductionRepairAction action)
             {
                 Calls.Add("execute");
+                Action = action;
+                return null;
+            }
+        }
+
+        private sealed class RecordingEquipAmmoService : IEquipAmmoActionService
+        {
+            public int Calls { get; private set; }
+            public EquipAmmoAction Action { get; private set; }
+
+            public EquipAmmoResult Execute(GameActionContext context, EquipAmmoAction action)
+            {
+                Calls++;
                 Action = action;
                 return null;
             }

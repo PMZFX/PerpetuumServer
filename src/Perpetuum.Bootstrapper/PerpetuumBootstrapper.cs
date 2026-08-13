@@ -1653,6 +1653,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousEquipmentController>();
             _ = _builder.RegisterType<AutonomousEquipmentProcurementService>()
                 .As<IAutonomousEquipmentProcurementService>();
+            _ = _builder.RegisterType<AutonomousEquipmentRecoveryCoordinator>()
+                .As<IAutonomousEquipmentRecoveryCoordinator>();
             _ = _builder.RegisterType<AutonomousCargoService>()
                 .As<IAutonomousCargoService>();
             _ = _builder.RegisterType<AutonomousMarketObservationService>()

@@ -74,6 +74,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousDestinationTravelService _travel;
         private readonly IUndockActionService _undock;
         private readonly IAutonomousActorStateStore _actorStateStore;
+        private readonly IAutonomousEquipmentRecoveryCoordinator _equipmentRecovery;
         private readonly IAutonomousActorAudit _audit;
         private int[] _definitions;
         private AutonomousTradeCommodity[] _commodities;
@@ -96,6 +97,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousDestinationTravelService travel,
             IUndockActionService undock,
             IAutonomousActorStateStore actorStateStore,
+            IAutonomousEquipmentRecoveryCoordinator equipmentRecovery,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
@@ -108,6 +110,7 @@ namespace Perpetuum.Services.Autonomous
             _travel = travel ?? throw new ArgumentNullException(nameof(travel));
             _undock = undock ?? throw new ArgumentNullException(nameof(undock));
             _actorStateStore = actorStateStore ?? throw new ArgumentNullException(nameof(actorStateStore));
+            _equipmentRecovery = equipmentRecovery ?? throw new ArgumentNullException(nameof(equipmentRecovery));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         }
 
@@ -153,17 +156,27 @@ namespace Perpetuum.Services.Autonomous
         public void Update(GameActionContext context, TimeSpan elapsed)
         {
             _stateElapsed += elapsed;
-            if (HandleRobotRecovery(context, false))
-                return;
-
             if (context.Actor.IsDocked)
             {
+                HandleRobotRecovery(context, false);
+                if (!_equipmentRecovery.PrepareDocked(
+                        context,
+                        _definition.Equipment,
+                        _recovery,
+                        Name,
+                        context.Actor.ActiveRobotEid))
+                    return;
+                _expectedRobotEid = _recovery.ExpectedRobotEid;
+                _robotRecoveryRequired = _recovery.RecoveryRequired;
                 if (_state != TraderState.Docked)
                     SetState(TraderState.Docked);
                 if (_stateElapsed >= TimeSpan.FromSeconds(_definition.Trader.DockedDwellSeconds))
                     UpdateDocked(context);
                 return;
             }
+
+            if (HandleRobotRecovery(context, false))
+                return;
 
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player == null)

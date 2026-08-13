@@ -209,21 +209,26 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousEquipmentSlotRequirement(
             int moduleDefinition,
             RobotComponentType component,
-            int slot)
+            int slot,
+            int ammoDefinition = 0)
         {
             if (moduleDefinition <= 0)
                 throw new ArgumentOutOfRangeException(nameof(moduleDefinition));
             if (slot < 0)
                 throw new ArgumentOutOfRangeException(nameof(slot));
+            if (ammoDefinition < 0)
+                throw new ArgumentOutOfRangeException(nameof(ammoDefinition));
 
             ModuleDefinition = moduleDefinition;
             Component = component;
             Slot = slot;
+            AmmoDefinition = ammoDefinition;
         }
 
         public int ModuleDefinition { get; }
         public RobotComponentType Component { get; }
         public int Slot { get; }
+        public int AmmoDefinition { get; }
     }
 
     public sealed class AutonomousEquipmentTemplate
@@ -263,7 +268,9 @@ namespace Perpetuum.Services.Autonomous
         RepairRobot,
         RemoveModule,
         FitModule,
-        MissingModule
+        MissingModule,
+        LoadAmmo,
+        MissingAmmo
     }
 
     public sealed class AutonomousEquipmentDirective
@@ -274,7 +281,8 @@ namespace Perpetuum.Services.Autonomous
             long itemEid = 0,
             int definition = 0,
             RobotComponentType component = default,
-            int slot = 0)
+            int slot = 0,
+            long moduleEid = 0)
         {
             Type = type;
             RobotEid = robotEid;
@@ -282,6 +290,7 @@ namespace Perpetuum.Services.Autonomous
             Definition = definition;
             Component = component;
             Slot = slot;
+            ModuleEid = moduleEid;
         }
 
         public AutonomousEquipmentDirectiveType Type { get; }
@@ -290,6 +299,7 @@ namespace Perpetuum.Services.Autonomous
         public int Definition { get; }
         public RobotComponentType Component { get; }
         public int Slot { get; }
+        public long ModuleEid { get; }
     }
 
     public static class AutonomousEquipmentPolicy
@@ -343,7 +353,36 @@ namespace Perpetuum.Services.Autonomous
                         fitted.Slot);
                 }
                 if (fitted != null)
-                    continue;
+                {
+                    if (requirement.AmmoDefinition <= 0 ||
+                        (fitted.AmmoDefinition == requirement.AmmoDefinition &&
+                         fitted.AmmoQuantity > 0))
+                        continue;
+
+                    AutonomousEquipmentItemSnapshot looseAmmo = observation.LooseItems
+                        .FirstOrDefault(item =>
+                            item.Definition == requirement.AmmoDefinition &&
+                            item.Quantity > 0);
+                    if (looseAmmo == null)
+                    {
+                        return new AutonomousEquipmentDirective(
+                            AutonomousEquipmentDirectiveType.MissingAmmo,
+                            robot.RobotEid,
+                            fitted.ModuleEid,
+                            requirement.AmmoDefinition,
+                            requirement.Component,
+                            requirement.Slot);
+                    }
+
+                    return new AutonomousEquipmentDirective(
+                        AutonomousEquipmentDirectiveType.LoadAmmo,
+                        robot.RobotEid,
+                        looseAmmo.ItemEid,
+                        looseAmmo.Definition,
+                        requirement.Component,
+                        requirement.Slot,
+                        fitted.ModuleEid);
+                }
 
                 AutonomousEquipmentItemSnapshot loose = observation.LooseItems
                     .FirstOrDefault(item =>

@@ -102,6 +102,24 @@ namespace Perpetuum.Services.Autonomous
             return true;
         }
 
+        /// <summary>
+        /// Accepts a replacement only after a caller has independently proven
+        /// through authoritative gameplay observations that the selected robot
+        /// is ready. This method changes durable lifecycle identity only; it
+        /// neither selects, repairs, fits, creates, nor authorizes a robot.
+        /// </summary>
+        public bool AcknowledgeReadyRobot(long activeRobotEid)
+        {
+            if (!RecoveryRequired || activeRobotEid <= 0)
+                return false;
+
+            ExpectedRobotEid = activeRobotEid;
+            RecoveryRequired = false;
+            RecoveryReason = null;
+            Save(activeRobotEid, false, null);
+            return true;
+        }
+
         private void Save(long observedRobotEid, bool recoveryRequired, string recoveryReason)
         {
             _stateStore.Save(new AutonomousActorState(

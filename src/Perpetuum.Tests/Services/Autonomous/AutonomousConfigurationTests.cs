@@ -339,6 +339,7 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             definition.Equipment.Robot = "arkhe_empty";
             definition.Equipment.RepairFacilityEid = 200;
+            definition.Equipment.Enabled = true;
             definition.Equipment.Slots.Add(new AutonomousEquipmentSlotOptions
             {
                 Module = "small_laser",
@@ -353,6 +354,7 @@ namespace Perpetuum.Tests.Services.Autonomous
         {
             var options = new AutonomousEquipmentOptions
             {
+                Enabled = true,
                 Robot = "arkhe_empty",
                 RepairFacilityEid = 200,
                 Slots = new List<AutonomousEquipmentSlotOptions>
@@ -383,6 +385,7 @@ namespace Perpetuum.Tests.Services.Autonomous
         {
             var options = new AutonomousEquipmentOptions
             {
+                Enabled = true,
                 Robot = "arkhe_empty",
                 RepairFacilityEid = 200,
                 Procurement = new AutonomousEquipmentProcurementOptions
