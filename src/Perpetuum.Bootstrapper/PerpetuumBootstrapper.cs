@@ -1649,6 +1649,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousMiningEquipmentService>();
             _ = _builder.RegisterType<AutonomousEquipmentObservationService>()
                 .As<IAutonomousEquipmentObservationService>();
+            _ = _builder.RegisterType<AutonomousEquipmentController>()
+                .As<IAutonomousEquipmentController>();
             _ = _builder.RegisterType<AutonomousCargoService>()
                 .As<IAutonomousCargoService>();
             _ = _builder.RegisterType<AutonomousMarketObservationService>()
@@ -1693,6 +1695,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousIndustryController>();
             _ = _builder.RegisterType<ManufacturerAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("manufacturer");
+            _ = _builder.RegisterType<EquipmentAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("equipment");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();

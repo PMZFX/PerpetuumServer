@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Perpetuum.Services.Autonomous;
 using Perpetuum.Zones.Terrains.Materials;
 using Xunit;
@@ -322,6 +323,59 @@ namespace Perpetuum.Tests.Services.Autonomous
 
             options.WalletReserve = 0;
             options.Validate(21);
+        }
+
+        [Fact]
+        public void EquipmentBehaviorRequiresExplicitRobotAndRepairFacility()
+        {
+            var definition = new AutonomousActorDefinition
+            {
+                CharacterId = 22,
+                Behavior = "equipment"
+            };
+            var configuration = new AutonomousConfiguration {Actors = {definition}};
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            definition.Equipment.Robot = "arkhe_empty";
+            definition.Equipment.RepairFacilityEid = 200;
+            definition.Equipment.Slots.Add(new AutonomousEquipmentSlotOptions
+            {
+                Module = "small_laser",
+                Component = "Head",
+                Slot = 1
+            });
+            configuration.Validate();
+        }
+
+        [Fact]
+        public void EquipmentBehaviorRejectsDuplicateSlotsAndUnsafeRepairPolicy()
+        {
+            var options = new AutonomousEquipmentOptions
+            {
+                Robot = "arkhe_empty",
+                RepairFacilityEid = 200,
+                Slots = new List<AutonomousEquipmentSlotOptions>
+                {
+                    new AutonomousEquipmentSlotOptions
+                    {
+                        Module = "module_a",
+                        Component = "Head",
+                        Slot = 1
+                    },
+                    new AutonomousEquipmentSlotOptions
+                    {
+                        Module = "module_b",
+                        Component = "Head",
+                        Slot = 1
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(22));
+            options.Slots.RemoveAt(1);
+            options.RepairBelowRatio = 1.1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(22));
         }
 
         [Theory]
