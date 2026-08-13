@@ -12,6 +12,13 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
     {
         public void GetOptionsByRequest(Character character, MissionLocation location)
         {
+            var result = GetOptions(character, location);
+
+            Message.Builder.WithData(result).ToCharacter(character).SetCommand(Commands.MissionGetOptions).Send();
+        }
+
+        public Dictionary<string, object> GetOptions(Character character, MissionLocation location)
+        {
             var result = new Dictionary<string, object>()
             {
                 {k.locationID, location.id}
@@ -29,8 +36,7 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
             var randomMissionAvailabilityDict = GenerateRandomMissionOptions(location, character, missionsDone, periodicMissions, solvableMissions);
 
             result.Add("randomMissions", randomMissionAvailabilityDict);
-
-            Message.Builder.WithData(result).ToCharacter(character).SetCommand(Commands.MissionGetOptions).Send();
+            return result;
         }
 
 

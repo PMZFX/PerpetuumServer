@@ -324,6 +324,14 @@ namespace Perpetuum.Services.MissionEngine.Missions
             return _targetsInProgress.Values.Where(t => t.TargetType == missionTargetType && !t.completed);
         }
 
+        public IReadOnlyList<MissionTargetInProgress> GetTargetsInProgress()
+        {
+            return _targetsInProgress.Values
+                .OrderBy(t => t.TargetOrder)
+                .ThenBy(t => t.DisplayOrder)
+                .ToArray();
+        }
+
         private IEnumerable<MissionTargetInProgress> CollectTargetsByType(MissionTargetType missionTargetType)
         {
             return _targetsInProgress.Values.Where(t => t.TargetType == missionTargetType);

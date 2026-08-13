@@ -1,31 +1,25 @@
 ﻿using System;
-using Perpetuum.Data;
 using Perpetuum.Host.Requests;
-using Perpetuum.Services.MissionEngine.MissionProcessorObjects;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers.Missions
 {
     public class MissionAbort : IRequestHandler
     {
-        private readonly MissionProcessor _missionProcessor;
+        private readonly IMissionActionService _missionActions;
 
-        public MissionAbort(MissionProcessor missionProcessor)
+        public MissionAbort(IMissionActionService missionActions)
         {
-            _missionProcessor = missionProcessor;
+            _missionActions = missionActions;
         }
 
         public void HandleRequest(IRequest request)
         {
-            using (var scope = Db.CreateTransaction())
-            {
-                var character = request.Session.Character;
-                var guidString = request.Data.GetOrDefault<string>(k.guid);
-                Guid.TryParse(guidString, out Guid missionGuid).ThrowIfFalse(ErrorCodes.SyntaxError);
-
-                _missionProcessor.AbortMissionByRequest(character, missionGuid, ErrorCodes.MissionAbortedByOwner);
-                
-                scope.Complete();
-            }
+            string guidString = request.Data.GetOrDefault<string>(k.guid);
+            Guid.TryParse(guidString, out Guid missionGuid).ThrowIfFalse(ErrorCodes.SyntaxError);
+            _missionActions.Abort(
+                new GameActionContext(request.Session.Character, GameActionSource.Client),
+                new MissionGuidAction(missionGuid));
         }
     }
 }
