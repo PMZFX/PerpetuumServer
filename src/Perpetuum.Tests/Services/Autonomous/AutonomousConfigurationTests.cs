@@ -285,6 +285,14 @@ namespace Perpetuum.Tests.Services.Autonomous
             options.Quantity = 1;
             options.RetrySeconds = 1;
             Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.RetrySeconds = 30;
+            options.ResearchFacilityEid = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.ResearchFacilityEid = 0;
+            options.PrototypeFacilityEid = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
         }
 
         [Theory]
