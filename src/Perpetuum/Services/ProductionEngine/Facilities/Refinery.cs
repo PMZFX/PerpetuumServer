@@ -29,31 +29,44 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
         public IDictionary<string,object> RefineQuery(Character character, int targetDefinition, int targetAmount, ProductionDescription productionDescription)
         {
-            var replyDict = new Dictionary<string, object>();
-
-            var materialEfficiency = GetMaterialMultiplier(character);
-            var components = productionDescription.Components
-                .Where(c => !c.IsSkipped(ProductionInProgressType.refine))
+            RefineQuote quote = GetQuote(character, targetDefinition, targetAmount, productionDescription);
+            var components = quote.Components
                 .ToDictionary("c", component => new Dictionary<string, object>
                 {
-                    {k.definition, component.EntityDefault.Definition},
-                    {k.real, component.EffectiveAmount(targetAmount, materialEfficiency)},
-                    {k.nominal, component.Amount*targetAmount}
+                    {k.definition, component.Definition},
+                    {k.real, component.EffectiveAmount},
+                    {k.nominal, component.NominalAmount}
                 });
 
-            //these are the nominal and the real amounts
-            replyDict.Add(k.components, components);
+            return new Dictionary<string, object>
+            {
+                {k.components, components},
+                {k.targetAmount, quote.TargetAmount},
+                {k.targetDefinition, quote.TargetDefinition},
+                {k.facility, quote.FacilityEid}
+            };
+        }
 
-            //requested amount
-            replyDict.Add(k.targetAmount, targetAmount);
+        public RefineQuote GetQuote(
+            Character character,
+            int targetDefinition,
+            int targetAmount,
+            ProductionDescription productionDescription)
+        {
+            if (character == null)
+                throw new System.ArgumentNullException(nameof(character));
+            if (productionDescription == null)
+                throw new System.ArgumentNullException(nameof(productionDescription));
 
-            //requested definition
-            replyDict.Add(k.targetDefinition, targetDefinition);
-
-            //requested facility
-            replyDict.Add(k.facility, Eid);
-
-            return replyDict;
+            double materialEfficiency = GetMaterialMultiplier(character);
+            RefineComponentQuote[] components = productionDescription.Components
+                .Where(component => !component.IsSkipped(ProductionInProgressType.refine))
+                .Select(component => new RefineComponentQuote(
+                    component.EntityDefault.Definition,
+                    component.Amount * targetAmount,
+                    component.EffectiveAmount(targetAmount, materialEfficiency)))
+                .ToArray();
+            return new RefineQuote(targetDefinition, targetAmount, Eid, components);
         }
 
         public IDictionary<string,object> Refine(Character character, Container sourceContainer, int targetAmount, ProductionDescription productionDescription)

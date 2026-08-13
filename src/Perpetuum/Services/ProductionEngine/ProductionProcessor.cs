@@ -795,6 +795,24 @@ namespace Perpetuum.Services.ProductionEngine
 
         public IDictionary<string, object> PrototypeStart(Character character, int targetDefinition, Container container, Prototyper prototyper, bool useCorporationWallet)
         {
+            PublicContainer publicContainer = container as PublicContainer;
+            publicContainer.ThrowIfNull(ErrorCodes.ServerError);
+            return PrototypeStartTyped(
+                    character,
+                    targetDefinition,
+                    publicContainer,
+                    prototyper,
+                    useCorporationWallet)
+                .ToDictionary(character);
+        }
+
+        public PrototypeProductionResult PrototypeStartTyped(
+            Character character,
+            int targetDefinition,
+            PublicContainer container,
+            Prototyper prototyper,
+            bool useCorporationWallet)
+        {
             var maxSlotCount = prototyper.RealMaxSlotsPerCharacter(character);
             var facilityEid = prototyper.Eid;
             var runningProductionCount = RunningProductions.GetRunningProductionsByFacilityAndCharacter(character, facilityEid).Count();
@@ -816,58 +834,67 @@ namespace Perpetuum.Services.ProductionEngine
 
             newProduction.SendProductionEventToCorporationMembersOnCommitted(Commands.ProductionRemoteStart);
 
-            //return info
-            var replyDict = new Dictionary<string, object>();
-
-            var productionDict = newProduction.ToDictionary();
-            replyDict.Add(k.production, productionDict);
-
-            var facilityInfo = prototyper.GetFacilityInfo(character);
-            replyDict.Add(k.facility, facilityInfo);
-
-            var containerData = container.ToDictionary();
-            replyDict.Add(k.sourceContainer, containerData);
-
-            replyDict.Add(k.hasBonus, hasBonus);
-
-            return replyDict;
+            return new PrototypeProductionResult(
+                newProduction,
+                prototyper,
+                container,
+                hasBonus);
         }
 
 
         public ErrorCodes PrototypeQuery(Character character, int targetDefinition, Prototyper prototyper, out Dictionary<string, object> replyDict)
         {
-            var ec = ErrorCodes.NoError;
-            replyDict = null;
+            character.TechTreeNodeUnlocked(targetDefinition)
+                .ThrowIfFalse(ErrorCodes.TechTreeNodeNotFound);
 
-            character.TechTreeNodeUnlocked(targetDefinition).ThrowIfFalse(ErrorCodes.TechTreeNodeNotFound);
-
-            ProductionDescription productionDescription;
-            if (!_productionDescriptions.TryGetValue(targetDefinition, out productionDescription))
+            if (!_productionDescriptions.ContainsKey(targetDefinition))
             {
                 Logger.Error("consistency error! no production description was found for: " + targetDefinition);
+                replyDict = null;
                 return ErrorCodes.ServerError;
             }
 
-            var facilityInfo = prototyper.GetFacilityInfo(character);
-            var prototypeTimeSeconds = prototyper.CalculatePrototypeTimeSeconds(character, targetDefinition);
-            var price = prototyper.CalculatePrototypePrice(prototypeTimeSeconds, targetDefinition);
-            bool hasBonus;
-            var materialMultiplier = prototyper.CalculateMaterialMultiplier(character, targetDefinition, out hasBonus);
-            var materials = ProductionDescription.GetRequiredComponentsInfo(  ProductionInProgressType.prototype, 1, materialMultiplier, productionDescription.Components.ToList());
-            var prototypeDefinition = _productionDataAccess.GetPrototypePair(targetDefinition);
+            replyDict = GetPrototypeQuote(character, targetDefinition, prototyper)
+                .ToDictionary(character);
+            return ErrorCodes.NoError;
+        }
 
-            replyDict = new Dictionary<string, object>
+        public PrototypeQuote GetPrototypeQuote(
+            Character character,
+            int targetDefinition,
+            Prototyper prototyper)
+        {
+            character.TechTreeNodeUnlocked(targetDefinition)
+                .ThrowIfFalse(ErrorCodes.TechTreeNodeNotFound);
+
+            if (!_productionDescriptions.TryGetValue(targetDefinition, out ProductionDescription productionDescription))
             {
-                {k.materials, materials},
-                {k.price, price},
-                {k.productionTime, prototypeTimeSeconds},
-                {k.facility, facilityInfo},
-                {k.targetDefinition, prototypeDefinition},
-                {k.materialEfficiency, materialMultiplier},
-                {k.hasBonus, hasBonus}
-            };
+                Logger.Error("consistency error! no production description was found for: " + targetDefinition);
+                throw new PerpetuumException(ErrorCodes.ServerError);
+            }
 
-            return ec;
+            int prototypeTimeSeconds = prototyper.CalculatePrototypeTimeSeconds(character, targetDefinition);
+            long price = prototyper.CalculatePrototypePrice(prototypeTimeSeconds, targetDefinition);
+            double materialMultiplier = prototyper.CalculateMaterialMultiplier(
+                character,
+                targetDefinition,
+                out bool hasBonus);
+            IReadOnlyList<ProductionMaterialQuote> materials = ProductionDescription
+                .GetRequiredComponentsQuote(
+                    ProductionInProgressType.prototype,
+                    1,
+                    materialMultiplier,
+                    productionDescription.Components);
+
+            return new PrototypeQuote(
+                targetDefinition,
+                _productionDataAccess.GetPrototypePair(targetDefinition),
+                price,
+                prototypeTimeSeconds,
+                materialMultiplier,
+                hasBonus,
+                prototyper,
+                materials);
         }
 
         public ErrorCodes InsuranceDelete(Character character, long targetEid)
@@ -1093,4 +1120,3 @@ namespace Perpetuum.Services.ProductionEngine
         }
     }
 }
-
