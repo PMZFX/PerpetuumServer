@@ -106,10 +106,16 @@ namespace Perpetuum.Services.Autonomous
                             throw new InvalidOperationException($"Autonomous player manufacturer options for character {actor.CharacterId} cannot be null.");
                         actor.Manufacturer.Validate(actor.CharacterId);
                     }
-                    if (roles.Contains("equipment") && actor.Equipment?.Enabled != true)
+                    if (roles.Contains("equipment") &&
+                        actor.GetEquipmentOptions("equipment")?.Enabled != true)
                         throw new InvalidOperationException($"Autonomous player equipment role for character {actor.CharacterId} must be enabled.");
-                    if (roles.Contains("mission") && actor.Mission?.Enabled != true)
-                        throw new InvalidOperationException($"Autonomous player mission role for character {actor.CharacterId} must be enabled.");
+                    if (roles.Contains("mission"))
+                    {
+                        if (actor.Mission?.Enabled != true)
+                            throw new InvalidOperationException($"Autonomous player mission role for character {actor.CharacterId} must be enabled.");
+                        actor.Mission.Validate(actor.CharacterId);
+                        ValidateCombatMission(actor);
+                    }
                 }
 
                 if (string.Equals(actor.Behavior?.Trim(), "equipment", StringComparison.OrdinalIgnoreCase))
@@ -132,23 +138,30 @@ namespace Perpetuum.Services.Autonomous
                     if (!actor.Mission.Enabled)
                         throw new InvalidOperationException($"Autonomous mission behavior for character {actor.CharacterId} must be enabled.");
                     actor.Mission.Validate(actor.CharacterId);
-                    if (actor.Mission.GetCategory() == MissionCategory.Combat)
-                    {
-                        if (!actor.Mission.Pve.Enabled)
-                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled mission PvE.");
-                        if (actor.Equipment?.Enabled != true)
-                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled equipment preparation.");
-                        if (actor.Equipment.Slots == null || actor.Equipment.Slots.Count == 0)
-                            throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require a configured combat fitting.");
-                        if (actor.Equipment.RepairBelowRatio <= actor.Mission.Pve.RetreatArmorRatio)
-                            throw new InvalidOperationException($"Autonomous combat mission repair threshold for character {actor.CharacterId} must exceed its armor retreat threshold.");
-                    }
+                    ValidateCombatMission(actor);
                 }
                 else if (actor.Mission?.Enabled == true)
                 {
                     actor.Mission.Validate(actor.CharacterId);
                 }
             }
+        }
+
+        private static void ValidateCombatMission(AutonomousActorDefinition actor)
+        {
+            if (actor.Mission.GetCategory() != MissionCategory.Combat)
+                return;
+
+            AutonomousEquipmentOptions missionEquipment =
+                actor.GetEquipmentOptions("mission");
+            if (!actor.Mission.Pve.Enabled)
+                throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled mission PvE.");
+            if (missionEquipment?.Enabled != true)
+                throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require enabled equipment preparation.");
+            if (missionEquipment.Slots == null || missionEquipment.Slots.Count == 0)
+                throw new InvalidOperationException($"Autonomous combat missions for character {actor.CharacterId} require a configured combat fitting.");
+            if (missionEquipment.RepairBelowRatio <= actor.Mission.Pve.RetreatArmorRatio)
+                throw new InvalidOperationException($"Autonomous combat mission repair threshold for character {actor.CharacterId} must exceed its armor retreat threshold.");
         }
     }
 
@@ -178,6 +191,17 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousMissionOptions Mission { get; set; } = new AutonomousMissionOptions();
 
         public AutonomousPlayerOptions Player { get; set; } = new AutonomousPlayerOptions();
+
+        public AutonomousEquipmentOptions GetEquipmentOptions(string role)
+        {
+            if (string.Equals(Behavior?.Trim(), "player", StringComparison.OrdinalIgnoreCase))
+            {
+                AutonomousEquipmentOptions loadout = Player?.GetLoadout(role);
+                if (loadout != null)
+                    return loadout;
+            }
+            return Equipment;
+        }
     }
 
     public sealed class AutonomousPlayerOptions
@@ -192,7 +216,19 @@ namespace Perpetuum.Services.Autonomous
                 "manufacturer"
             };
 
+        private static readonly HashSet<string> EquipmentRoles =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "equipment",
+                "mission",
+                "mining",
+                "trader"
+            };
+
         public List<string> Roles { get; set; } = new List<string>();
+
+        public Dictionary<string, AutonomousEquipmentOptions> Loadouts { get; set; } =
+            new Dictionary<string, AutonomousEquipmentOptions>();
 
         [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int MinimumRoleSeconds { get; set; } = 30;
@@ -210,6 +246,18 @@ namespace Perpetuum.Services.Autonomous
                 .ToList();
         }
 
+        public AutonomousEquipmentOptions GetLoadout(string role)
+        {
+            if (string.IsNullOrWhiteSpace(role) || Loadouts == null)
+                return null;
+            return Loadouts
+                .FirstOrDefault(pair => string.Equals(
+                    pair.Key?.Trim(),
+                    role.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+                .Value;
+        }
+
         public void Validate(int characterId)
         {
             IReadOnlyList<string> roles = GetRoles();
@@ -219,6 +267,22 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous player for character {characterId} contains an unsupported role.");
             if (roles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != roles.Count)
                 throw new InvalidOperationException($"Autonomous player roles for character {characterId} must be distinct.");
+            if (Loadouts == null)
+                throw new InvalidOperationException($"Autonomous player loadouts for character {characterId} cannot be null.");
+            string[] loadoutRoles = Loadouts.Keys
+                .Select(role => role?.Trim().ToLowerInvariant())
+                .ToArray();
+            if (loadoutRoles.Any(string.IsNullOrWhiteSpace) ||
+                loadoutRoles.Any(role => !EquipmentRoles.Contains(role)))
+                throw new InvalidOperationException($"Autonomous player loadouts for character {characterId} contain an unsupported role.");
+            if (loadoutRoles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != loadoutRoles.Length)
+                throw new InvalidOperationException($"Autonomous player loadout roles for character {characterId} must be distinct.");
+            if (loadoutRoles.Any(role => !roles.Contains(role)))
+                throw new InvalidOperationException($"Autonomous player loadouts for character {characterId} must belong to its role plan.");
+            if (Loadouts.Values.Any(loadout => loadout?.Enabled != true))
+                throw new InvalidOperationException($"Autonomous player loadouts for character {characterId} must be non-null and enabled.");
+            foreach (AutonomousEquipmentOptions loadout in Loadouts.Values)
+                loadout.Validate(characterId);
             if (MinimumRoleSeconds < 0 || MinimumRoleSeconds > 3600)
                 throw new InvalidOperationException($"Autonomous player minimum role duration for character {characterId} must be between 0 and 3600 seconds.");
             if (MaximumRoleSeconds < 5 || MaximumRoleSeconds > 86400 ||

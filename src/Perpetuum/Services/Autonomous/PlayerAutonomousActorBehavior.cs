@@ -233,13 +233,31 @@ namespace Perpetuum.Services.Autonomous
 
         private void StartActive(GameActionContext context)
         {
-            _active = _roles(_state.ActiveRole, _definition);
+            _active = _roles(_state.ActiveRole, CreateRoleDefinition(_state.ActiveRole));
             _active.Start(context);
             _audit.Write(
                 context.Actor.Id,
                 "role_started",
                 AutonomousActorStatus.Active,
                 _state.ActiveRole);
+        }
+
+        private AutonomousActorDefinition CreateRoleDefinition(string role)
+        {
+            return new AutonomousActorDefinition
+            {
+                CharacterId = _definition.CharacterId,
+                Enabled = _definition.Enabled,
+                Behavior = role,
+                RecoveryRevision = _definition.RecoveryRevision,
+                Patrol = _definition.Patrol,
+                Mining = _definition.Mining,
+                Trader = _definition.Trader,
+                Manufacturer = _definition.Manufacturer,
+                Equipment = _definition.GetEquipmentOptions(role),
+                Mission = _definition.Mission,
+                Player = _definition.Player
+            };
         }
     }
 }

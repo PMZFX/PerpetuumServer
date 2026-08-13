@@ -174,6 +174,20 @@ mission progression waits are retained and never treated as completion.
       "trader",
       "manufacturer"
     ],
+    "Loadouts": {
+      "mission": {
+        "Enabled": true,
+        "Robot": "combat_robot_definition",
+        "RepairFacilityEid": 100,
+        "Slots": []
+      },
+      "mining": {
+        "Enabled": true,
+        "Robot": "mining_robot_definition",
+        "RepairFacilityEid": 100,
+        "Slots": []
+      }
+    },
     "MinimumRoleSeconds": 30,
     "MaximumRoleSeconds": 1800,
     "RepeatCompletedMissions": true
@@ -185,9 +199,23 @@ mission progression waits are retained and never treated as completion.
 
 The abbreviated example shows scheduling only. Every selected role must also
 have its complete valid role section described below; choosing `player` does
-not relax any role validation. Persisted plan identity intentionally prevents
-silently reordering a live character's roles. Operators must inspect and
-explicitly migrate its `ai_player_state` row before changing that plan.
+not relax any role validation. `Player.Loadouts` may override the actor's
+ordinary `Equipment` section independently for the `equipment`, `mission`,
+`mining`, and `trader` roles. This lets one character select different owned
+robots and fittings for different careers through the same repair, fitting,
+ammunition, purchase, and active-robot actions used by clients. An omitted
+role loadout falls back to the actor's `Equipment` section. Loadouts must be
+enabled, belong to the selected role plan, and are validated against the role
+that actually uses them; a combat mission therefore validates its mission
+loadout rather than an unrelated mining fitting.
+
+Persisted plan identity intentionally prevents silently reordering a live
+character's roles. Operators must inspect and explicitly migrate its
+`ai_player_state` row before changing that plan. Selecting a different owned
+robot may also enter the existing conservative replacement-recovery state.
+That state clears only after a fresh docked observation proves the selected
+robot matches its configured role loadout; no player-only swap exemption is
+granted.
 
 Docked equipment lifecycle support is opt-in through an actor's `Equipment`
 section. It observes only that character's current public container, owned

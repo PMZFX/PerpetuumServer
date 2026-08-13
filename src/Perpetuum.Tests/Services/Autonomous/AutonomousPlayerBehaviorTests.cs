@@ -244,6 +244,51 @@ namespace Perpetuum.Tests.Services.Autonomous
                 roles.Started);
         }
 
+        [Fact]
+        public void RoleLoadoutIsBoundToEachChildAndPersistsThroughRestart()
+        {
+            AutonomousActorDefinition definition = Definition("mission", "mining");
+            var missionLoadout = Loadout("combat_robot");
+            var miningLoadout = Loadout("mining_robot");
+            definition.Player.Loadouts["MISSION"] = missionLoadout;
+            definition.Player.Loadouts["mining"] = miningLoadout;
+            var missions = new MemoryMissionGoalStore
+            {
+                State = new AutonomousMissionGoalState(
+                    7, MissionCategory.Transport, 0, 1, 1, "complete", 100)
+            };
+            var states = new MemoryPlayerStateStore();
+            var firstRoles = new RoleFactory();
+            var character = new CharacterState {Docked = true};
+            GameActionContext context = Context();
+            PlayerAutonomousActorBehavior behavior = Create(
+                definition,
+                firstRoles,
+                states,
+                missions,
+                new MemoryTradeStateStore(),
+                character);
+
+            behavior.Start(context);
+            Assert.Same(missionLoadout, firstRoles.Loadouts["mission"]);
+            behavior.Update(context, TimeSpan.Zero);
+            Assert.Same(miningLoadout, firstRoles.Loadouts["mining"]);
+
+            behavior.Stop(context);
+            var restartedRoles = new RoleFactory();
+            behavior = Create(
+                definition,
+                restartedRoles,
+                states,
+                missions,
+                new MemoryTradeStateStore(),
+                character);
+            behavior.Start(context);
+
+            Assert.Equal("mining", states.State.ActiveRole);
+            Assert.Same(miningLoadout, restartedRoles.Loadouts["mining"]);
+        }
+
         private static AutonomousActorDefinition Definition(params string[] roles)
         {
             return new AutonomousActorDefinition
@@ -256,6 +301,16 @@ namespace Perpetuum.Tests.Services.Autonomous
                     MinimumRoleSeconds = 0,
                     MaximumRoleSeconds = 5
                 }
+            };
+        }
+
+        private static AutonomousEquipmentOptions Loadout(string robot)
+        {
+            return new AutonomousEquipmentOptions
+            {
+                Enabled = true,
+                Robot = robot,
+                RepairFacilityEid = 100
             };
         }
 
@@ -293,8 +348,14 @@ namespace Perpetuum.Tests.Services.Autonomous
             public List<string> Started { get; } = new List<string>();
             public List<string> Stopped { get; } = new List<string>();
 
-            public IAutonomousActorBehavior Create(string role, AutonomousActorDefinition definition) =>
-                new Role(role, Started, Stopped);
+            public Dictionary<string, AutonomousEquipmentOptions> Loadouts { get; } =
+                new Dictionary<string, AutonomousEquipmentOptions>();
+
+            public IAutonomousActorBehavior Create(string role, AutonomousActorDefinition definition)
+            {
+                Loadouts[role] = definition.Equipment;
+                return new Role(role, Started, Stopped);
+            }
         }
 
         private sealed class Role : IAutonomousActorBehavior
