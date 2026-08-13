@@ -295,6 +295,31 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => options.Validate(21));
         }
 
+        [Fact]
+        public void ManufacturerProcurementRequiresBoundedPriceQuantityAndReserve()
+        {
+            var options = new AutonomousManufacturerProcurementOptions
+            {
+                Enabled = true,
+                MaximumPurchaseQuantity = 100,
+                MaximumUnitPrice = 0,
+                WalletReserve = 10000
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.MaximumUnitPrice = 25;
+            options.MaximumPurchaseQuantity = 0;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.MaximumPurchaseQuantity = 100;
+            options.WalletReserve = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.WalletReserve = 0;
+            options.Validate(21);
+        }
+
         [Theory]
         [InlineData(1, 48)]
         [InlineData(18, 129)]

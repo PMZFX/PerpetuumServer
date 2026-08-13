@@ -141,6 +141,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IProductionCalibrationActionService _calibration;
         private readonly IProductionPrototypeActionService _prototype;
         private readonly IProductionMassProductionActionService _massProduction;
+        private readonly IAutonomousIndustryProcurementService _procurement;
         private readonly IAutonomousIndustryGoalStore _goals;
         private readonly IAutonomousActorAudit _audit;
 
@@ -152,6 +153,7 @@ namespace Perpetuum.Services.Autonomous
             IProductionCalibrationActionService calibration,
             IProductionPrototypeActionService prototype,
             IProductionMassProductionActionService massProduction,
+            IAutonomousIndustryProcurementService procurement,
             IAutonomousIndustryGoalStore goals,
             IAutonomousActorAudit audit)
         {
@@ -162,6 +164,7 @@ namespace Perpetuum.Services.Autonomous
             _calibration = calibration ?? throw new ArgumentNullException(nameof(calibration));
             _prototype = prototype ?? throw new ArgumentNullException(nameof(prototype));
             _massProduction = massProduction ?? throw new ArgumentNullException(nameof(massProduction));
+            _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         }
@@ -251,11 +254,14 @@ namespace Perpetuum.Services.Autonomous
                     AutonomousManufacturerPolicy.FindMissingMaterials(quote.Quote, inventory);
                 if (missing.Count > 0)
                 {
-                    WriteState(state.WithProgress(
+                    WaitForProcurement(
+                        context,
+                        options,
+                        state,
                         "WaitingMaterials",
-                        line.Id,
-                        procurement: missing,
-                        blockedReason: "required_components_missing"));
+                        missing,
+                        "required_components_missing",
+                        line.Id);
                     return;
                 }
 
@@ -319,14 +325,18 @@ namespace Perpetuum.Services.Autonomous
                     inventory);
                 IReadOnlyDictionary<int, long> calibrationProcurement =
                     new Dictionary<int, long> {{calibrationDefinition, 1}};
-                WriteState(state.WithProgress(
+                WaitForProcurement(
+                    context,
+                    options,
+                    state,
                     "WaitingCalibration",
-                    procurement: AutonomousManufacturerPolicy.MergeProcurement(
+                    AutonomousManufacturerPolicy.MergeProcurement(
                         plan.IsSuccessful ? plan.Procurement : null,
                         calibrationProcurement),
-                    blockedReason: plan.IsSuccessful
+                    plan.IsSuccessful
                         ? "calibration_program_required"
-                        : plan.Failure.ToString()));
+                        : plan.Failure.ToString(),
+                    preferredDefinition: calibrationDefinition);
                 return;
             }
 
@@ -341,6 +351,7 @@ namespace Perpetuum.Services.Autonomous
             if (sourceItem == null || researchKit == null)
             {
                 var prerequisites = new List<IReadOnlyDictionary<int, long>>();
+                int? preferredDefinition = null;
                 if (sourceItem == null)
                 {
                     int sourceQuantity = EntityDefault.Get(sourceDefinition).Quantity;
@@ -348,6 +359,7 @@ namespace Perpetuum.Services.Autonomous
                     {
                         {sourceDefinition, Math.Max(1, sourceQuantity)}
                     });
+                    preferredDefinition = sourceDefinition;
                 }
                 if (researchKit == null)
                 {
@@ -362,12 +374,18 @@ namespace Perpetuum.Services.Autonomous
                         return;
                     }
                     prerequisites.Add(new Dictionary<int, long> {{researchKitDefinition, 1}});
+                    if (!preferredDefinition.HasValue)
+                        preferredDefinition = researchKitDefinition;
                 }
 
-                WriteState(state.WithProgress(
+                WaitForProcurement(
+                    context,
+                    options,
+                    state,
                     "WaitingResearchInputs",
-                    procurement: AutonomousManufacturerPolicy.MergeProcurement(prerequisites.ToArray()),
-                    blockedReason: "research_inputs_missing"));
+                    AutonomousManufacturerPolicy.MergeProcurement(prerequisites.ToArray()),
+                    "research_inputs_missing",
+                    preferredDefinition: preferredDefinition);
                 return;
             }
 
@@ -430,10 +448,13 @@ namespace Perpetuum.Services.Autonomous
                     AutonomousManufacturerPolicy.FindMissingMaterials(quote.Materials, inventory);
                 if (missing.Count > 0)
                 {
-                    WriteState(state.WithProgress(
+                    WaitForProcurement(
+                        context,
+                        options,
+                        state,
                         "WaitingPrototypeMaterials",
-                        procurement: missing,
-                        blockedReason: "prototype_components_missing"));
+                        missing,
+                        "prototype_components_missing");
                     return;
                 }
 
@@ -445,6 +466,72 @@ namespace Perpetuum.Services.Autonomous
                 WriteState(state.WithProgress(
                     "WaitingPolicy",
                     procurement: state.Procurement,
+                    blockedReason: exception.error.ToString()));
+            }
+        }
+
+        private void WaitForProcurement(
+            GameActionContext context,
+            AutonomousManufacturerOptions options,
+            AutonomousIndustryGoalState state,
+            string phase,
+            IReadOnlyDictionary<int, long> requirements,
+            string blockedReason,
+            int? lineId = null,
+            int? preferredDefinition = null)
+        {
+            AutonomousIndustryGoalState waiting = state.WithProgress(
+                phase,
+                lineId,
+                procurement: requirements,
+                blockedReason: blockedReason);
+            WriteState(waiting);
+            if (!options.Procurement.Enabled)
+                return;
+
+            try
+            {
+                AutonomousIndustryProcurement result = _procurement.PurchaseNext(
+                    context,
+                    requirements,
+                    options.Procurement,
+                    options.UseCorporationWallet,
+                    preferredDefinition);
+                switch (result.Result)
+                {
+                    case AutonomousIndustryProcurementResult.Purchased:
+                        WriteState(waiting.WithProgress(
+                            "Procuring",
+                            lineId,
+                            procurement: AutonomousIndustryProcurementService.SubtractPurchased(
+                                requirements,
+                                result.Definition,
+                                result.Quantity),
+                            blockedReason:
+                                $"purchased_{result.Definition}_{result.Quantity}_at_{result.UnitPrice:0.###}"));
+                        break;
+                    case AutonomousIndustryProcurementResult.NoEligibleOffer:
+                        WriteState(waiting.WithProgress(
+                            phase,
+                            lineId,
+                            procurement: requirements,
+                            blockedReason: "no_eligible_local_offer"));
+                        break;
+                    case AutonomousIndustryProcurementResult.WalletReserveReached:
+                        WriteState(waiting.WithProgress(
+                            phase,
+                            lineId,
+                            procurement: requirements,
+                            blockedReason: "procurement_wallet_reserve"));
+                        break;
+                }
+            }
+            catch (PerpetuumException exception)
+            {
+                WriteState(waiting.WithProgress(
+                    "WaitingPolicy",
+                    lineId,
+                    procurement: requirements,
                     blockedReason: exception.error.ToString()));
             }
         }

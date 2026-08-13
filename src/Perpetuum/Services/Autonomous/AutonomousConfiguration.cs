@@ -117,6 +117,9 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public int RetrySeconds { get; set; } = 30;
 
+        public AutonomousManufacturerProcurementOptions Procurement { get; set; } =
+            new AutonomousManufacturerProcurementOptions();
+
         public void Validate(int characterId)
         {
             if (TargetDefinition <= 0)
@@ -131,6 +134,34 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous manufacturer prototype facility EID for character {characterId} cannot be negative.");
             if (RetrySeconds < 5 || RetrySeconds > 3600)
                 throw new InvalidOperationException($"Autonomous manufacturer retry for character {characterId} must be between 5 and 3600 seconds.");
+            if (Procurement == null)
+                throw new InvalidOperationException($"Autonomous manufacturer procurement options for character {characterId} cannot be null.");
+            Procurement.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousManufacturerProcurementOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(100), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumPurchaseQuantity { get; set; } = 100;
+
+        [DefaultValue(0.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double MaximumUnitPrice { get; set; }
+
+        [DefaultValue(10000.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double WalletReserve { get; set; } = 10000.0;
+
+        public void Validate(int characterId)
+        {
+            if (MaximumPurchaseQuantity < 1 || MaximumPurchaseQuantity > 10000)
+                throw new InvalidOperationException($"Autonomous manufacturer purchase batch for character {characterId} must be between 1 and 10000.");
+            if (double.IsNaN(WalletReserve) || double.IsInfinity(WalletReserve) || WalletReserve < 0)
+                throw new InvalidOperationException($"Autonomous manufacturer wallet reserve for character {characterId} must be finite and non-negative.");
+            if (Enabled && (double.IsNaN(MaximumUnitPrice) || double.IsInfinity(MaximumUnitPrice) || MaximumUnitPrice <= 0))
+                throw new InvalidOperationException($"Autonomous manufacturer maximum purchase price for character {characterId} must be greater than zero when procurement is enabled.");
         }
     }
 

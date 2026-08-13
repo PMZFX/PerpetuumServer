@@ -181,7 +181,13 @@ supply procurement leaves, but it never authorizes execution. Apply
     "ResearchFacilityEid": 457,
     "PrototypeFacilityEid": 458,
     "UseCorporationWallet": false,
-    "RetrySeconds": 30
+    "RetrySeconds": 30,
+    "Procurement": {
+      "Enabled": true,
+      "MaximumPurchaseQuantity": 100,
+      "MaximumUnitPrice": 25.0,
+      "WalletReserve": 10000.0
+    }
   }
 }
 ```
@@ -195,9 +201,23 @@ that relationship, tech-tree unlocks, slots, materials, wallets, time, and all
 other character-specific production rules. A missing unlock is a wait state;
 the controller never spends or grants research points.
 
-Changing those goal fields does not overwrite an existing durable goal. The
-controller enters `BlockedConfiguration` until the old goal is deliberately
-reviewed. This prevents a configuration edit from silently forgetting work.
+Local procurement is separately opt-in. When enabled, the controller attempts
+at most one bounded purchase per retry from the lowest eligible sell order in
+the character's current market. It never sees remote offers, buys from itself,
+exceeds `MaximumUnitPrice`, exceeds `MaximumPurchaseQuantity`, or spends below
+`WalletReserve`. Personal or corporation wallet selection follows
+`UseCorporationWallet` and the same market action used by clients. The public
+container remains authoritative after a crash: the next character-specific
+quote recalculates what is still missing before another purchase. No offer,
+insufficient spendable credit, restricted corporation orders, and market races
+become ordinary wait states rather than grants or retries outside the normal
+market transaction.
+
+Changing `TargetDefinition`, `Quantity`, or a configured production facility
+does not overwrite an existing durable goal. The controller enters
+`BlockedConfiguration` until the old goal is deliberately reviewed. This
+prevents a configuration edit from silently forgetting work. Procurement caps
+are operating policy and may be tightened without replacing the goal.
 Do not assign `manufacturer` to a miner, trader, mentor, system agent, or other
 owned character merely to exercise the loop; provision and document a
 dedicated normal character instead.
