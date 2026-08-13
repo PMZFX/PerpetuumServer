@@ -132,6 +132,57 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Equal(40, equipAmmo.Action.AmmoEid);
         }
 
+        [Fact]
+        public void DockedEquipmentLoopResumesAndCompletesOneLegitimateStepAtATime()
+        {
+            var looseModule = new AutonomousEquipmentItemSnapshot(30, 2000, 1, 1);
+            var looseAmmo = new AutonomousEquipmentItemSnapshot(40, 3000, 20, 1);
+            var observations = new QueueObservationService(
+                Snapshot(Robot(active: false)),
+                Snapshot(Robot(active: true, healthRatio: 0.5)),
+                Snapshot(Robot(active: true, modules: new[] {Module(2500)})),
+                new AutonomousEquipmentSnapshot(
+                    true, 50, 10, new[] {Robot(active: true)}, new[] {looseModule}),
+                new AutonomousEquipmentSnapshot(
+                    true, 50, 10, new[] {Robot(active: true, modules: new[] {Module()})}, new[] {looseAmmo}),
+                Snapshot(Robot(active: true, modules: new[] {Module(ammoDefinition: 3000, ammoQuantity: 20)})));
+            var actions = new List<string>();
+            var goals = new RecordingGoalStore();
+            var selection = new RecordingSelectService(actions);
+            var fitting = new RecordingFittingService(actions);
+            var equipAmmo = new RecordingEquipAmmoService(actions);
+            var repair = new RecordingRepairService(actions);
+            AutonomousEquipmentOptions options = Options();
+            options.Slots[0].Ammo = "ammo";
+            AutonomousEquipmentController controller = Controller(
+                observations,
+                goals,
+                selection,
+                fitting,
+                equipAmmo,
+                repair);
+
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+
+            controller = Controller(
+                observations,
+                goals,
+                selection,
+                fitting,
+                equipAmmo,
+                repair);
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(AutonomousEquipmentUpdateResult.Acted, controller.Update(Context(), options));
+            Assert.Equal(AutonomousEquipmentUpdateResult.Ready, controller.Update(Context(), options));
+
+            Assert.Equal(
+                new[] {"select", "quote", "repair", "remove", "equip", "ammo"},
+                actions);
+            Assert.Equal("ready", goals.State.Phase);
+        }
+
         private static AutonomousEquipmentController Controller(
             IAutonomousEquipmentObservationService observations,
             IAutonomousEquipmentGoalStore goals,
@@ -219,16 +270,19 @@ namespace Perpetuum.Tests.Services.Autonomous
                 modules ?? Array.Empty<AutonomousFittedModuleSnapshot>());
         }
 
-        private static AutonomousFittedModuleSnapshot Module()
+        private static AutonomousFittedModuleSnapshot Module(
+            int definition = 2000,
+            int ammoDefinition = 0,
+            int ammoQuantity = 0)
         {
             return new AutonomousFittedModuleSnapshot(
                 20,
-                2000,
+                definition,
                 RobotComponentType.Head,
                 1,
                 1,
-                0,
-                0);
+                ammoDefinition,
+                ammoQuantity);
         }
 
         private sealed class EquipmentDefaults : IEntityDefaultReader
@@ -279,42 +333,68 @@ namespace Perpetuum.Tests.Services.Autonomous
 
         private sealed class RecordingSelectService : ISelectActiveRobotActionService
         {
+            private readonly List<string> _actions;
+
+            public RecordingSelectService(List<string> actions = null)
+            {
+                _actions = actions;
+            }
+
             public int Calls { get; private set; }
             public Robot Execute(GameActionContext context, SelectActiveRobotAction action)
             {
                 Calls++;
+                _actions?.Add("select");
                 return null;
             }
         }
 
         private sealed class RecordingFittingService : IRobotFittingActionService
         {
+            private readonly List<string> _actions;
+
+            public RecordingFittingService(List<string> actions = null)
+            {
+                _actions = actions;
+            }
+
             public int Calls { get; private set; }
             public RobotFittingResult Equip(GameActionContext context, EquipModuleAction action)
             {
                 Calls++;
+                _actions?.Add("equip");
                 return null;
             }
             public RobotFittingResult Remove(GameActionContext context, RemoveModuleAction action)
             {
                 Calls++;
+                _actions?.Add("remove");
                 return null;
             }
         }
 
         private sealed class RecordingRepairService : IProductionRepairActionService
         {
+            private readonly List<string> _actions;
+
+            public RecordingRepairService(List<string> actions = null)
+            {
+                _actions = actions;
+            }
+
             public List<string> Calls { get; } = new List<string>();
             public ProductionRepairAction Action { get; private set; }
             public RepairQuote Quote(GameActionContext context, ProductionRepairAction action)
             {
                 Calls.Add("quote");
+                _actions?.Add("quote");
                 Action = action;
                 return new RepairQuote(action.FacilityEid, Array.Empty<RepairItemQuote>());
             }
             public ProductionRepairResult Execute(GameActionContext context, ProductionRepairAction action)
             {
                 Calls.Add("execute");
+                _actions?.Add("repair");
                 Action = action;
                 return null;
             }
@@ -322,12 +402,20 @@ namespace Perpetuum.Tests.Services.Autonomous
 
         private sealed class RecordingEquipAmmoService : IEquipAmmoActionService
         {
+            private readonly List<string> _actions;
+
+            public RecordingEquipAmmoService(List<string> actions = null)
+            {
+                _actions = actions;
+            }
+
             public int Calls { get; private set; }
             public EquipAmmoAction Action { get; private set; }
 
             public EquipAmmoResult Execute(GameActionContext context, EquipAmmoAction action)
             {
                 Calls++;
+                _actions?.Add("ammo");
                 Action = action;
                 return null;
             }
