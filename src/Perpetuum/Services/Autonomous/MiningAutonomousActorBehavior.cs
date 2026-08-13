@@ -52,6 +52,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IAutonomousMiningEquipmentService _equipment;
         private readonly IAutonomousCargoService _cargo;
         private readonly IAutonomousCargoDispositionService _cargoDisposition;
+        private readonly IAutonomousSupplyFulfillmentService _supplyFulfillment;
         private readonly IAutonomousMiningProcurementService _procurement;
         private readonly IAutonomousMiningResupplyService _resupply;
         private readonly IMineralScanObservationService _scanObservations;
@@ -101,6 +102,7 @@ namespace Perpetuum.Services.Autonomous
             IAutonomousMiningEquipmentService equipment,
             IAutonomousCargoService cargo,
             IAutonomousCargoDispositionService cargoDisposition,
+            IAutonomousSupplyFulfillmentService supplyFulfillment,
             IAutonomousMiningProcurementService procurement,
             IAutonomousMiningResupplyService resupply,
             IMineralScanObservationService scanObservations,
@@ -119,6 +121,7 @@ namespace Perpetuum.Services.Autonomous
             _equipment = equipment ?? throw new ArgumentNullException(nameof(equipment));
             _cargo = cargo ?? throw new ArgumentNullException(nameof(cargo));
             _cargoDisposition = cargoDisposition ?? throw new ArgumentNullException(nameof(cargoDisposition));
+            _supplyFulfillment = supplyFulfillment ?? throw new ArgumentNullException(nameof(supplyFulfillment));
             _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _resupply = resupply ?? throw new ArgumentNullException(nameof(resupply));
             _scanObservations = scanObservations ?? throw new ArgumentNullException(nameof(scanObservations));
@@ -369,6 +372,18 @@ namespace Perpetuum.Services.Autonomous
             {
                 try
                 {
+                    AutonomousSupplyFulfillment fulfillment = _supplyFulfillment.ListReserved(
+                        context,
+                        _material,
+                        _definition.Mining.SupplyFulfillment,
+                        _definition.Mining.Market);
+                    if (fulfillment.Result == AutonomousSupplyFulfillmentResult.Listed)
+                    {
+                        _audit.Write(context.Actor.Id, "mining_supply_listed", AutonomousActorStatus.Active,
+                            $"definition_{fulfillment.Definition}_quantity_{fulfillment.Quantity}_unit_price_{fulfillment.UnitPrice}");
+                        return;
+                    }
+
                     AutonomousCargoDisposition disposition = _cargoDisposition.SellNext(
                         context,
                         _material,

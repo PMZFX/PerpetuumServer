@@ -489,6 +489,9 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousManufacturerSalesOptions Sales { get; set; } =
             new AutonomousManufacturerSalesOptions();
 
+        public AutonomousSupplyDemandOptions SupplyDemand { get; set; } =
+            new AutonomousSupplyDemandOptions();
+
         public void Validate(int characterId)
         {
             if (TargetDefinition <= 0)
@@ -509,8 +512,28 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous manufacturer procurement options for character {characterId} cannot be null.");
             if (Sales == null)
                 throw new InvalidOperationException($"Autonomous manufacturer sales options for character {characterId} cannot be null.");
+            if (SupplyDemand == null)
+                throw new InvalidOperationException($"Autonomous manufacturer supply-demand options for character {characterId} cannot be null.");
             Procurement.Validate(characterId);
             Sales.Validate(characterId);
+            SupplyDemand.Validate(characterId);
+            if (SupplyDemand.Enabled && !Procurement.Enabled)
+                throw new InvalidOperationException($"Autonomous manufacturer supply demand for character {characterId} requires enabled ordinary market procurement.");
+        }
+    }
+
+    public sealed class AutonomousSupplyDemandOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RequestLifetimeMinutes { get; set; } = 60;
+
+        public void Validate(int characterId)
+        {
+            if (RequestLifetimeMinutes < 5 || RequestLifetimeMinutes > 10080)
+                throw new InvalidOperationException($"Autonomous manufacturer supply-request lifetime for character {characterId} must be between 5 and 10080 minutes.");
         }
     }
 
@@ -656,6 +679,9 @@ namespace Perpetuum.Services.Autonomous
 
         public AutonomousMiningResupplyOptions Resupply { get; set; } = new AutonomousMiningResupplyOptions();
 
+        public AutonomousSupplyFulfillmentOptions SupplyFulfillment { get; set; } =
+            new AutonomousSupplyFulfillmentOptions();
+
         public MaterialType GetMaterialType()
         {
             return Enum.TryParse(Material, true, out MaterialType materialType)
@@ -698,6 +724,31 @@ namespace Perpetuum.Services.Autonomous
             if (Resupply == null)
                 throw new InvalidOperationException($"Autonomous mining resupply options for character {characterId} cannot be null.");
             Resupply.Validate(characterId);
+            if (SupplyFulfillment == null)
+                throw new InvalidOperationException($"Autonomous mining supply-fulfillment options for character {characterId} cannot be null.");
+            SupplyFulfillment.Validate(characterId);
+            if (SupplyFulfillment.Enabled && !Market.Enabled)
+                throw new InvalidOperationException($"Autonomous mining supply fulfillment for character {characterId} requires enabled ordinary market sales.");
+        }
+    }
+
+    public sealed class AutonomousSupplyFulfillmentOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(500), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumReservationQuantity { get; set; } = 500;
+
+        [DefaultValue(120), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int ReservationLifetimeMinutes { get; set; } = 120;
+
+        public void Validate(int characterId)
+        {
+            if (MaximumReservationQuantity < 1 || MaximumReservationQuantity > 100000)
+                throw new InvalidOperationException($"Autonomous mining supply reservation quantity for character {characterId} must be between 1 and 100000.");
+            if (ReservationLifetimeMinutes < 5 || ReservationLifetimeMinutes > 10080)
+                throw new InvalidOperationException($"Autonomous mining supply reservation lifetime for character {characterId} must be between 5 and 10080 minutes.");
         }
     }
 
