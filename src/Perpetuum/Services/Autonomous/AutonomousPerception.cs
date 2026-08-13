@@ -23,9 +23,21 @@ namespace Perpetuum.Services.Autonomous
             Position position,
             double distance,
             bool hostile)
+            : this(eid, kind, 0, position, distance, hostile)
+        {
+        }
+
+        public AutonomousVisibleUnitSnapshot(
+            long eid,
+            AutonomousVisibleUnitKind kind,
+            int definition,
+            Position position,
+            double distance,
+            bool hostile)
         {
             Eid = eid;
             Kind = kind;
+            Definition = definition;
             Position = position;
             Distance = distance;
             Hostile = hostile;
@@ -33,6 +45,7 @@ namespace Perpetuum.Services.Autonomous
 
         public long Eid { get; }
         public AutonomousVisibleUnitKind Kind { get; }
+        public int Definition { get; }
         public Position Position { get; }
         public double Distance { get; }
         public bool Hostile { get; }
@@ -75,7 +88,10 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousVisibleUnitSnapshot Nearest { get; }
         public bool HasThreat => Nearest != null;
 
-        public static AutonomousThreatAssessment From(AutonomousPerceptionSnapshot snapshot, double responseRange)
+        public static AutonomousThreatAssessment From(
+            AutonomousPerceptionSnapshot snapshot,
+            double responseRange,
+            long excludedEid = 0)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -83,7 +99,7 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(responseRange));
 
             AutonomousVisibleUnitSnapshot[] threats = snapshot.VisibleUnits
-                .Where(unit => unit.Hostile && unit.Distance <= responseRange)
+                .Where(unit => unit.Eid != excludedEid && unit.Hostile && unit.Distance <= responseRange)
                 .ToArray();
             return new AutonomousThreatAssessment(threats, threats.FirstOrDefault());
         }
@@ -163,6 +179,7 @@ namespace Perpetuum.Services.Autonomous
                 .Select(target => new AutonomousVisibleUnitSnapshot(
                     target.Eid,
                     GetKind(target),
+                    target.Definition,
                     target.CurrentPosition,
                     Distance2D(player.CurrentPosition, target.CurrentPosition),
                     target.IsHostile(player)))

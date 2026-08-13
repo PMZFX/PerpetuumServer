@@ -49,6 +49,28 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void ThreatAssessmentCanExcludeOnlyTheActiveCombatTarget()
+        {
+            var snapshot = new AutonomousPerceptionSnapshot(
+                false,
+                1,
+                new Position(0, 0),
+                new[]
+                {
+                    new AutonomousVisibleUnitSnapshot(
+                        11, AutonomousVisibleUnitKind.Npc, new Position(4, 0), 4, true),
+                    new AutonomousVisibleUnitSnapshot(
+                        12, AutonomousVisibleUnitKind.Npc, new Position(5, 0), 5, true)
+                });
+
+            AutonomousThreatAssessment assessment = AutonomousThreatAssessment.From(snapshot, 10, 11);
+
+            Assert.True(assessment.HasThreat);
+            Assert.Single(assessment.Threats);
+            Assert.Equal(12, assessment.Nearest.Eid);
+        }
+
+        [Fact]
         public void ThreatAssessmentIsEmptyWhenNoVisibleThreatIsInRange()
         {
             var snapshot = new AutonomousPerceptionSnapshot(

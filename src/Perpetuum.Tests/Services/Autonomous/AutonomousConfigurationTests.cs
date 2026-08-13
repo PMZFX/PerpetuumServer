@@ -117,6 +117,97 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
 
+        [Fact]
+        public void ProactivePveIsOptInAndConservativelyBounded()
+        {
+            var options = new AutonomousPveOptions();
+
+            options.Validate(9);
+
+            Assert.False(options.Enabled);
+            Assert.Equal(75.0, options.AcquisitionRange);
+            Assert.Equal(45.0, options.EngagementRange);
+            Assert.Equal(0.45, options.RetreatArmorRatio);
+            Assert.Equal(1, options.TargetCount);
+            Assert.Equal(1, options.MaxLosses);
+        }
+
+        [Fact]
+        public void PveEngagementRangeCannotExceedVisibleAcquisitionRange()
+        {
+            var options = new AutonomousPveOptions
+            {
+                AcquisitionRange = 40,
+                EngagementRange = 41
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(9));
+        }
+
+        [Fact]
+        public void EnabledPveRequiresARepairableConfiguredLoadout()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors =
+                {
+                    new AutonomousActorDefinition
+                    {
+                        CharacterId = 9,
+                        Behavior = "patrol",
+                        Patrol = new AutonomousPatrolOptions
+                        {
+                            Pve = new AutonomousPveOptions {Enabled = true}
+                        }
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
+        [Fact]
+        public void CombatMissionRequiresEnabledPveAndARepairableCombatFitting()
+        {
+            var actor = new AutonomousActorDefinition
+            {
+                CharacterId = 19,
+                Behavior = "mission",
+                Mission = new AutonomousMissionOptions
+                {
+                    Enabled = true,
+                    Category = "Combat",
+                    SourceBaseEid = 100
+                }
+            };
+            var configuration = new AutonomousConfiguration {Actors = {actor}};
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            actor.Mission.Pve.Enabled = true;
+            actor.Equipment = new AutonomousEquipmentOptions
+            {
+                Enabled = true,
+                Robot = "arkhe_empty",
+                RepairFacilityEid = 100,
+                RepairBelowRatio = actor.Mission.Pve.RetreatArmorRatio,
+                Slots = new List<AutonomousEquipmentSlotOptions>
+                {
+                    new AutonomousEquipmentSlotOptions
+                    {
+                        Module = "small_laser",
+                        Ammo = "small_laser_crystal",
+                        Component = "Head",
+                        Slot = 0
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+            actor.Equipment.RepairBelowRatio = 0.95;
+            configuration.Validate();
+        }
+
         [Theory]
         [InlineData(99)]
         [InlineData(60001)]

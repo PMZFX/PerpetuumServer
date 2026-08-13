@@ -1676,6 +1676,13 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<DatabaseAutonomousMissionGoalStore>()
                 .As<IAutonomousMissionGoalStore>()
                 .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousPveCombatGoalStore>()
+                .As<IAutonomousPveCombatGoalStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousPveCombatObservationService>()
+                .As<IAutonomousPveCombatObservationService>();
+            _ = _builder.RegisterType<AutonomousPveCombatController>()
+                .As<IAutonomousPveCombatController>();
             _ = _builder.RegisterType<AutonomousMissionObservationService>()
                 .As<IAutonomousMissionObservationService>();
             _ = _builder.RegisterType<AutonomousMissionCharacterObservationService>()
@@ -1698,6 +1705,8 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousWorldTravelService>();
             _ = _builder.RegisterType<AutonomousDestinationTravelService>()
                 .As<IAutonomousDestinationTravelService>();
+            _ = _builder.RegisterType<AutonomousPositionTravelService>()
+                .As<IAutonomousPositionTravelService>();
             _ = _builder.RegisterType<AutonomousMiningResupplyService>()
                 .As<IAutonomousMiningResupplyService>();
             _ = _builder.RegisterType<PatrolAutonomousActorBehavior>()
