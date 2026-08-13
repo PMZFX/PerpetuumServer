@@ -582,5 +582,85 @@ namespace Perpetuum.Tests.Services.Autonomous
             definition.Mission.SourceBaseEid = 100;
             configuration.Validate();
         }
+
+        [Fact]
+        public void PlayerCombatMissionCanUseItsOwnOrdinaryLoadout()
+        {
+            var definition = new AutonomousActorDefinition
+            {
+                CharacterId = 31,
+                Behavior = "player",
+                Player = new AutonomousPlayerOptions
+                {
+                    Roles = new List<string> {"mission", "mining"},
+                    Loadouts = new Dictionary<string, AutonomousEquipmentOptions>
+                    {
+                        {
+                            "mission",
+                            new AutonomousEquipmentOptions
+                            {
+                                Enabled = true,
+                                Robot = "combat_robot",
+                                RepairFacilityEid = 100,
+                                Slots = new List<AutonomousEquipmentSlotOptions>
+                                {
+                                    new AutonomousEquipmentSlotOptions
+                                    {
+                                        Module = "weapon",
+                                        Ammo = "ammo",
+                                        Component = "Head",
+                                        Slot = 0
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "mining",
+                            new AutonomousEquipmentOptions
+                            {
+                                Enabled = true,
+                                Robot = "mining_robot",
+                                RepairFacilityEid = 100
+                            }
+                        }
+                    }
+                },
+                Mission = new AutonomousMissionOptions
+                {
+                    Enabled = true,
+                    Category = "Combat",
+                    SourceBaseEid = 100,
+                    Pve = new AutonomousPveOptions {Enabled = true}
+                }
+            };
+            var configuration = new AutonomousConfiguration {Actors = {definition}};
+
+            configuration.Validate();
+
+            Assert.False(definition.Equipment.Enabled);
+            Assert.Equal("combat_robot", definition.GetEquipmentOptions("mission").Robot);
+            Assert.Equal("mining_robot", definition.GetEquipmentOptions("mining").Robot);
+        }
+
+        [Fact]
+        public void PlayerRejectsLoadoutOutsideItsEquipmentRolesOrPlan()
+        {
+            var options = new AutonomousPlayerOptions
+            {
+                Roles = new List<string> {"mining"},
+                Loadouts = new Dictionary<string, AutonomousEquipmentOptions>
+                {
+                    {"manufacturer", new AutonomousEquipmentOptions {Enabled = true}}
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(31));
+
+            options.Loadouts = new Dictionary<string, AutonomousEquipmentOptions>
+            {
+                {"trader", new AutonomousEquipmentOptions {Enabled = true}}
+            };
+            Assert.Throws<InvalidOperationException>(() => options.Validate(31));
+        }
     }
 }
