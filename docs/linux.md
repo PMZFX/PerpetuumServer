@@ -78,6 +78,16 @@ enabled zones. A database with a different enabled-zone count may require a
 different upper port bound. Linux host networking is also suitable when SQL
 Server and the game host are intentionally managed on the same machine.
 
+Concurrent development servers must not share a writable runtime-data tree or
+game database. Give each stack its own Docker network, SQL volume/database, and
+runtime-data copy. Set the second stack's `ListenerPort` to a non-overlapping
+range such as `17800`, then publish `17800-17859:17800-17859`. Do not merely
+remap host port `17800` to an internal relay on `17700`: zone handoff responses
+advertise the sequential ports selected from `ListenerPort`, so the internal
+and published ranges must agree. Read-only dedicated-server assets may be
+shared when they are mounted separately from the writable terrain layers and
+configuration.
+
 Follow startup and verify the terminal state:
 
 ```bash
@@ -288,6 +298,29 @@ The initial executor carries one shipment at a time. It does not share market
 memory, cancel old orders, respond tactically to threats, or manufacture an
 unprofitable route. Those are later career and corporation policies, not
 privileges hidden in transport.
+
+The manufacturing foundation exposes `IProductionRecipeCatalog`, a read-only
+projection over the same initialized `components`, `prototypes`,
+`itemresearchlevels`, and entity-default caches used by the production engine.
+Each recipe retains its output batch size, prototype and calibration metadata,
+and the existing facility-specific component applicability rules. In
+particular, robot shards remain prototype inputs and are not incorrectly
+multiplied into every mill batch. Basic commodities use refinery per-unit output
+semantics; definitions without a supported intended route remain external
+requirements rather than exploiting the overly broad low-level refine entry
+point.
+
+`IAutonomousIndustryPlanner` recursively expands a requested output quantity
+into deterministic, dependency-ordered nominal refinery and mill steps. It
+consumes a supplied inventory snapshot first, reuses excess output from whole
+batches across sibling requirements, aggregates remaining procurement leaves,
+and reports produced surplus. Cycles, arithmetic overflow, excessive depth,
+and excessive graph size return bounded failures without executable partial
+steps. The result is strategic planning data only: it does not check a
+character's unlocks, quote material efficiency, reserve items, spend credits,
+create a calibration line, or start production. Those remain a later shared
+action-service boundary so an autonomous manufacturer must satisfy the same
+facility, inventory, research, time, and wallet rules as a player.
 
 Patrol requires the project database overlay that creates
 `dbo.ai_actor_state`. It durably records the expected robot. If that robot is

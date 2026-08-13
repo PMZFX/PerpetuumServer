@@ -1732,6 +1732,12 @@ namespace Perpetuum.Bootstrapper
             {
                 e.Instance.Init();
             }).As<IProductionDataAccess>().SingleInstance();
+            _ = _builder.RegisterType<ProductionRecipeCatalog>()
+                .As<IProductionRecipeCatalog>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousIndustryPlanner>()
+                .As<IAutonomousIndustryPlanner>()
+                .SingleInstance();
             _ = _builder.RegisterType<ProductionDescription>();
             _ = _builder.RegisterType<ProductionComponentCollector>();
             _ = _builder.RegisterType<ProductionInProgressRepository>().As<IProductionInProgressRepository>();
