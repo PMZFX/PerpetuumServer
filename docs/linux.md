@@ -110,6 +110,16 @@ character IDs:
   "Enabled": false,
   "TickIntervalMilliseconds": 500,
   "MaxConsecutiveFailures": 3,
+  "PopulationLab": {
+    "Enabled": false,
+    "MaximumActors": 100,
+    "MaximumActorUpdatesPerTick": 25,
+    "SnapshotIntervalSeconds": 60,
+    "PersistSnapshots": false,
+    "SnapshotRetentionHours": 168,
+    "Archetypes": {},
+    "Cohorts": []
+  },
   "Actors": [
     {
       "CharacterId": 123,
@@ -119,6 +129,77 @@ character IDs:
   ]
 }
 ```
+
+Population Lab is a separately opt-in host and observability layer for a
+larger set of already-existing normal characters. It never creates an account,
+character, robot, item, wallet balance, extension, or permission. Every cohort
+must name explicit positive character IDs, so a range cannot silently claim a
+human character. Archetypes are ordinary actor definitions with
+`CharacterId: 0`; expansion deep-copies the complete role policy for each
+cohort member. The legacy `Actors` list remains valid and may coexist with
+cohorts. Duplicate IDs across either source fail server configuration, and the
+resolved population must remain under the explicit `MaximumActors` safety cap.
+
+```json
+"PopulationLab": {
+  "Enabled": true,
+  "MaximumActors": 100,
+  "MaximumActorUpdatesPerTick": 25,
+  "SnapshotIntervalSeconds": 60,
+  "PersistSnapshots": true,
+  "SnapshotRetentionHours": 168,
+  "Archetypes": {
+    "titan-miner": {
+      "CharacterId": 0,
+      "Enabled": true,
+      "Behavior": "mining",
+      "Mining": {
+        "Material": "Titan",
+        "Market": { "Enabled": true }
+      }
+    },
+    "scout": {
+      "CharacterId": 0,
+      "Enabled": true,
+      "Behavior": "patrol"
+    }
+  },
+  "Cohorts": [
+    {
+      "Name": "starter-miners",
+      "Archetype": "titan-miner",
+      "CharacterIds": [101, 102, 103]
+    },
+    {
+      "Name": "starter-scouts",
+      "Archetype": "scout",
+      "CharacterIds": [104, 105]
+    }
+  ]
+}
+```
+
+The example is abbreviated; each archetype must still satisfy the complete
+role validation documented below. Registration fails independently for any ID
+that is inactive, missing, or otherwise not a legitimate character. No fixture
+is repaired or synthesized for it.
+
+With Population Lab enabled, the host updates at most
+`MaximumActorUpdatesPerTick` expensive behavior controllers in deterministic
+round-robin order. Elapsed time accumulates per character, so timers continue
+to represent the actor's real scheduled interval rather than granting faster
+movement, production, combat, or retries. Lightweight session-ownership checks
+still run for every actor every host tick: a human login immediately suspends
+the bot, stops its movement, and releases its synthetic zone session even when
+that actor is deep in the behavior backlog.
+
+Structured `[AUTONOMOUS_POPULATION]` snapshots report configured and registered
+actors, status counts, behavior mix, completed updates, failures, registration
+failures, scheduler backlog, maximum update time, and maximum actor interval.
+Set `PersistSnapshots` only after applying
+`database/overlays/016_ai_population_samples.sql`; samples are retained for
+`SnapshotRetentionHours` and contain operational aggregates, not hidden world,
+market, mission, inventory, or character observations.
 
 ## Shared gameplay actions
 

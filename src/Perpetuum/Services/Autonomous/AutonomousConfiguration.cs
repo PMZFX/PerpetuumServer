@@ -22,6 +22,35 @@ namespace Perpetuum.Services.Autonomous
 
         public List<AutonomousActorDefinition> Actors { get; set; } = new List<AutonomousActorDefinition>();
 
+        public AutonomousPopulationLabOptions PopulationLab { get; set; } =
+            new AutonomousPopulationLabOptions();
+
+        public IReadOnlyList<AutonomousActorDefinition> ResolveActorDefinitions()
+        {
+            var resolved = new List<AutonomousActorDefinition>(Actors ??
+                new List<AutonomousActorDefinition>());
+            if (PopulationLab?.Enabled != true)
+                return resolved;
+
+            foreach (AutonomousPopulationCohortOptions cohort in PopulationLab.Cohorts
+                         .Where(item => item?.Enabled == true))
+            {
+                AutonomousActorDefinition archetype = PopulationLab.FindArchetype(cohort.Archetype);
+                if (archetype == null)
+                    throw new InvalidOperationException($"Autonomous population cohort '{cohort.Name}' references unknown archetype '{cohort.Archetype}'.");
+
+                foreach (int characterId in cohort.CharacterIds)
+                {
+                    AutonomousActorDefinition actor = JsonConvert.DeserializeObject<AutonomousActorDefinition>(
+                        JsonConvert.SerializeObject(archetype));
+                    actor.CharacterId = characterId;
+                    resolved.Add(actor);
+                }
+            }
+
+            return resolved;
+        }
+
         public void Validate()
         {
             if (TickIntervalMilliseconds < 100 || TickIntervalMilliseconds > 60000)
@@ -33,14 +62,22 @@ namespace Perpetuum.Services.Autonomous
             if (Actors == null)
                 throw new InvalidOperationException("Autonomous.Actors cannot be null.");
 
-            if (Actors.Any(actor => actor == null || actor.CharacterId <= 0))
+            if (PopulationLab == null)
+                throw new InvalidOperationException("Autonomous.PopulationLab cannot be null.");
+            PopulationLab.Validate();
+
+            IReadOnlyList<AutonomousActorDefinition> actors = ResolveActorDefinitions();
+            if (PopulationLab.Enabled && actors.Count > PopulationLab.MaximumActors)
+                throw new InvalidOperationException($"Autonomous population resolves {actors.Count} actors, exceeding MaximumActors {PopulationLab.MaximumActors}.");
+
+            if (actors.Any(actor => actor == null || actor.CharacterId <= 0))
                 throw new InvalidOperationException("Every autonomous actor must have a positive character ID.");
 
-            var duplicate = Actors.GroupBy(actor => actor.CharacterId).FirstOrDefault(group => group.Count() > 1);
+            var duplicate = actors.GroupBy(actor => actor.CharacterId).FirstOrDefault(group => group.Count() > 1);
             if (duplicate != null)
                 throw new InvalidOperationException($"Autonomous character {duplicate.Key} is configured more than once.");
 
-            foreach (AutonomousActorDefinition actor in Actors)
+            foreach (AutonomousActorDefinition actor in actors)
             {
                 if (actor.RecoveryRevision < 0)
                     throw new InvalidOperationException($"Autonomous recovery revision for character {actor.CharacterId} cannot be negative.");
@@ -163,6 +200,101 @@ namespace Perpetuum.Services.Autonomous
             if (missionEquipment.RepairBelowRatio <= actor.Mission.Pve.RetreatArmorRatio)
                 throw new InvalidOperationException($"Autonomous combat mission repair threshold for character {actor.CharacterId} must exceed its armor retreat threshold.");
         }
+    }
+
+    public sealed class AutonomousPopulationLabOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(100), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumActors { get; set; } = 100;
+
+        [DefaultValue(25), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaximumActorUpdatesPerTick { get; set; } = 25;
+
+        [DefaultValue(60), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int SnapshotIntervalSeconds { get; set; } = 60;
+
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool PersistSnapshots { get; set; }
+
+        [DefaultValue(168), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int SnapshotRetentionHours { get; set; } = 168;
+
+        public Dictionary<string, AutonomousActorDefinition> Archetypes { get; set; } =
+            new Dictionary<string, AutonomousActorDefinition>();
+
+        public List<AutonomousPopulationCohortOptions> Cohorts { get; set; } =
+            new List<AutonomousPopulationCohortOptions>();
+
+        public AutonomousActorDefinition FindArchetype(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name) || Archetypes == null)
+                return null;
+            return Archetypes.FirstOrDefault(pair => string.Equals(
+                pair.Key?.Trim(),
+                name.Trim(),
+                StringComparison.OrdinalIgnoreCase)).Value;
+        }
+
+        public void Validate()
+        {
+            if (MaximumActors < 1 || MaximumActors > 5000)
+                throw new InvalidOperationException("Autonomous PopulationLab.MaximumActors must be between 1 and 5000.");
+            if (MaximumActorUpdatesPerTick < 1 || MaximumActorUpdatesPerTick > 5000)
+                throw new InvalidOperationException("Autonomous PopulationLab.MaximumActorUpdatesPerTick must be between 1 and 5000.");
+            if (SnapshotIntervalSeconds < 5 || SnapshotIntervalSeconds > 3600)
+                throw new InvalidOperationException("Autonomous PopulationLab.SnapshotIntervalSeconds must be between 5 and 3600.");
+            if (SnapshotRetentionHours < 1 || SnapshotRetentionHours > 8760)
+                throw new InvalidOperationException("Autonomous PopulationLab.SnapshotRetentionHours must be between 1 and 8760.");
+            if (Archetypes == null)
+                throw new InvalidOperationException("Autonomous PopulationLab.Archetypes cannot be null.");
+            if (Cohorts == null)
+                throw new InvalidOperationException("Autonomous PopulationLab.Cohorts cannot be null.");
+            if (Cohorts.Any(cohort => cohort == null))
+                throw new InvalidOperationException("Autonomous PopulationLab.Cohorts cannot contain null entries.");
+
+            string[] names = Archetypes.Keys.Select(name => name?.Trim()).ToArray();
+            if (names.Any(string.IsNullOrWhiteSpace) ||
+                names.Distinct(StringComparer.OrdinalIgnoreCase).Count() != names.Length)
+                throw new InvalidOperationException("Autonomous population archetype names must be non-empty and distinct.");
+            if (Archetypes.Values.Any(archetype => archetype == null || archetype.CharacterId != 0))
+                throw new InvalidOperationException("Autonomous population archetypes must be non-null templates with CharacterId 0.");
+
+            if (!Enabled)
+                return;
+
+            string[] cohortNames = Cohorts.Where(cohort => cohort?.Enabled == true)
+                .Select(cohort => cohort.Name?.Trim())
+                .ToArray();
+            if (cohortNames.Any(string.IsNullOrWhiteSpace) ||
+                cohortNames.Distinct(StringComparer.OrdinalIgnoreCase).Count() != cohortNames.Length)
+                throw new InvalidOperationException("Enabled autonomous population cohort names must be non-empty and distinct.");
+
+            foreach (AutonomousPopulationCohortOptions cohort in Cohorts.Where(item => item?.Enabled == true))
+            {
+                if (FindArchetype(cohort.Archetype) == null)
+                    throw new InvalidOperationException($"Autonomous population cohort '{cohort.Name}' references unknown archetype '{cohort.Archetype}'.");
+                if (cohort.CharacterIds == null || cohort.CharacterIds.Count == 0)
+                    throw new InvalidOperationException($"Autonomous population cohort '{cohort.Name}' requires explicit character IDs.");
+                if (cohort.CharacterIds.Any(characterId => characterId <= 0) ||
+                    cohort.CharacterIds.Distinct().Count() != cohort.CharacterIds.Count)
+                    throw new InvalidOperationException($"Autonomous population cohort '{cohort.Name}' character IDs must be positive and distinct.");
+            }
+        }
+    }
+
+    public sealed class AutonomousPopulationCohortOptions
+    {
+        public string Name { get; set; }
+
+        [DefaultValue(true), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; } = true;
+
+        public string Archetype { get; set; }
+
+        public List<int> CharacterIds { get; set; } = new List<int>();
     }
 
     public sealed class AutonomousActorDefinition

@@ -47,6 +47,17 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousActorSnapshot Snapshot =>
             new AutonomousActorSnapshot(CharacterId, _behavior.Name, Status, _reason);
 
+        public bool CheckControlOwnership()
+        {
+            if (Status == AutonomousActorStatus.Stopped || Status == AutonomousActorStatus.Faulted)
+                return false;
+            if (_sessionManager.GetByCharacter(_character) == null)
+                return true;
+
+            Suspend("human_session");
+            return false;
+        }
+
         public void Start()
         {
             if (Status != AutonomousActorStatus.Stopped)
@@ -78,11 +89,8 @@ namespace Perpetuum.Services.Autonomous
             if (Status == AutonomousActorStatus.Stopped || Status == AutonomousActorStatus.Faulted)
                 return;
 
-            if (_sessionManager.GetByCharacter(_character) != null)
-            {
-                Suspend("human_session");
+            if (!CheckControlOwnership())
                 return;
-            }
 
             Player player = _zoneManager.GetPlayer(_character);
             if (player == null && !_character.IsDocked && _character.ZoneId.HasValue)
