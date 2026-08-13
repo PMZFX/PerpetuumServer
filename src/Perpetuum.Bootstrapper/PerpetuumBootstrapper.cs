@@ -1613,6 +1613,9 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<ProductionResearchActionService>().As<IProductionResearchActionService>();
             _ = _builder.RegisterType<ProductionCalibrationActionService>().As<IProductionCalibrationActionService>();
             _ = _builder.RegisterType<ProductionMassProductionActionService>().As<IProductionMassProductionActionService>();
+            _ = _builder.RegisterType<ProductionRepairActionService>().As<IProductionRepairActionService>();
+            _ = _builder.RegisterType<RobotFittingActionService>().As<IRobotFittingActionService>();
+            _ = _builder.RegisterType<SelectActiveRobotActionService>().As<ISelectActiveRobotActionService>();
             _ = _builder.RegisterType<EquipAmmoActionService>().As<IEquipAmmoActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
             _ = _builder.RegisterType<TeleportActionService>().As<ITeleportActionService>();
