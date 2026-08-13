@@ -117,6 +117,55 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => configuration.Validate());
         }
 
+        [Fact]
+        public void ProactivePveIsOptInAndConservativelyBounded()
+        {
+            var options = new AutonomousPveOptions();
+
+            options.Validate(9);
+
+            Assert.False(options.Enabled);
+            Assert.Equal(75.0, options.AcquisitionRange);
+            Assert.Equal(45.0, options.EngagementRange);
+            Assert.Equal(0.45, options.RetreatArmorRatio);
+            Assert.Equal(1, options.TargetCount);
+            Assert.Equal(1, options.MaxLosses);
+        }
+
+        [Fact]
+        public void PveEngagementRangeCannotExceedVisibleAcquisitionRange()
+        {
+            var options = new AutonomousPveOptions
+            {
+                AcquisitionRange = 40,
+                EngagementRange = 41
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(9));
+        }
+
+        [Fact]
+        public void EnabledPveRequiresARepairableConfiguredLoadout()
+        {
+            var configuration = new AutonomousConfiguration
+            {
+                Actors =
+                {
+                    new AutonomousActorDefinition
+                    {
+                        CharacterId = 9,
+                        Behavior = "patrol",
+                        Patrol = new AutonomousPatrolOptions
+                        {
+                            Pve = new AutonomousPveOptions {Enabled = true}
+                        }
+                    }
+                }
+            };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+        }
+
         [Theory]
         [InlineData(99)]
         [InlineData(60001)]
