@@ -46,6 +46,11 @@ namespace Perpetuum.Tests.Services.Autonomous
                 controller.Update(context, options).Result);
             Assert.Equal(1, locks.LockCalls);
 
+            Assert.Equal(
+                AutonomousPveCombatUpdateResult.Waiting,
+                controller.Update(context, options).Result);
+            Assert.Equal(1, locks.LockCalls);
+
             observations.TrackedTarget = Target(
                 42,
                 30,

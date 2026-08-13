@@ -257,8 +257,8 @@ namespace Perpetuum.Services.Autonomous
     }
 
     /// <summary>
-    /// Executes at most one normal targeting, ammunition, or module action per
-    /// update. Durable state is intent only; visibility, target life, locks,
+    /// Executes a bounded normal targeting, ammunition, and module sequence.
+    /// Durable state is intent only; visibility, target life, locks,
     /// armor, core, ammunition, and module state are freshly observed before
     /// every decision.
     /// </summary>
@@ -391,6 +391,12 @@ namespace Perpetuum.Services.Autonomous
                     return Retreat(context, state, snapshot, now, "lock_timeout");
                 if (target.LockState == AutonomousDefenseLockState.Missing)
                 {
+                    if (state.Phase == "locking")
+                    {
+                        return new AutonomousPveCombatUpdate(
+                            AutonomousPveCombatUpdateResult.Waiting,
+                            target.Eid);
+                    }
                     try
                     {
                         _targetLocks.LockUnit(context, new UnitTargetLockAction(target.Eid, true));
