@@ -1,28 +1,27 @@
-using Perpetuum.Containers;
 using Perpetuum.Host.Requests;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionCPRGInfo : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionCalibrationActionService _calibration;
 
-        public ProductionCPRGInfo(ProductionManager productionManager)
+        public ProductionCPRGInfo(IProductionCalibrationActionService calibration)
         {
-            _productionManager = productionManager;
+            _calibration = calibration;
         }
 
         public void HandleRequest(IRequest request)
         {
             var facility = request.Data.GetOrDefault<long>(k.facility);
             var cprgEid = request.Data.GetOrDefault<long>(k.eid);
-            var character = request.Session.Character;
-
-            _productionManager.PrepareProductionForPublicContainer(facility, character, out Mill mill, out PublicContainer container);
-            var replyDict = ProductionProcessor.LineQuery(character, container, cprgEid, mill);
-            Message.Builder.FromRequest(request).WithData(replyDict).Send();
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            CalibrationProgramQuote quote = _calibration.Quote(
+                context,
+                new ProductionCalibrationAction(facility, cprgEid));
+            Message.Builder.FromRequest(request).WithData(quote.ToDictionary()).Send();
         }
     }
 }

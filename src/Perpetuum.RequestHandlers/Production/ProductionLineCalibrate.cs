@@ -1,35 +1,25 @@
-using Perpetuum.Containers;
-using Perpetuum.Data;
 using Perpetuum.Host.Requests;
-using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionLineCalibrate : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionCalibrationActionService _calibration;
 
-        public ProductionLineCalibrate(ProductionManager productionManager)
+        public ProductionLineCalibrate(IProductionCalibrationActionService calibration)
         {
-            _productionManager = productionManager;
+            _calibration = calibration;
         }
 
         public void HandleRequest(IRequest request)
         {
-            using (var scope = Db.CreateTransaction())
-            {
-                var calibrationEid = request.Data.GetOrDefault<long>(k.eid);
-                var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-                var character = request.Session.Character;
-
-                _productionManager.PrepareProductionForPublicContainer(facilityEid, character, out Mill mill, out PublicContainer container);
-
-                var replyDict = mill.CalibrateLine(character, calibrationEid, container);
-                Message.Builder.FromRequest(request).WithData(replyDict).Send();
-                
-                scope.Complete();
-            }
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            var action = new ProductionCalibrationAction(
+                request.Data.GetOrDefault<long>(k.facility),
+                request.Data.GetOrDefault<long>(k.eid));
+            var result = _calibration.Execute(context, action);
+            Message.Builder.FromRequest(request).WithData(result.ToDictionary(context.Actor)).Send();
         }
     }
 }

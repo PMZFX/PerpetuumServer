@@ -150,6 +150,16 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
         public IDictionary<string, object> CalibrateLine(Character character, long calibrationEid, Container container)
         {
+            PublicContainer publicContainer = container as PublicContainer;
+            publicContainer.ThrowIfNull(ErrorCodes.ServerError);
+            return CalibrateLineTyped(character, calibrationEid, publicContainer).ToDictionary(character);
+        }
+
+        public CalibrationLineResult CalibrateLineTyped(
+            Character character,
+            long calibrationEid,
+            PublicContainer container)
+        {
             var lineCount = ProductionLine.CountLinesForCharacter(character, Eid);
             var maxSlots = RealMaxSlotsPerCharacter(character);
 
@@ -189,18 +199,7 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
             ProductionHelper.ProductionLogInsert(character, targetDefinition, 1, ProductionInProgressType.inserCT, 0, 0, false);
 
-            var informDict = container.ToDictionary();
-            var linesList = GetLinesList(character);
-            var facilityInfo = GetFacilityInfo(character);
-
-            var replyDict = new Dictionary<string, object>
-            {
-                {k.lines, linesList},
-                {k.lineCount, linesList.Count},
-                {k.sourceContainer, informDict},
-                {k.facility, facilityInfo}
-            };
-            return replyDict;
+            return new CalibrationLineResult(this, container);
         }
 
 
@@ -328,8 +327,24 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
         public Dictionary<string, object> QueryMaterialAndTime(CalibrationProgram calibrationProgram, Character character, int targetDefintion, int lineOrCPRGMaterialPoints, int lineOrCPRGTimePoints, bool forNextRound = false)
         {
-            var result = new Dictionary<string, object>();
+            return GetMassProductionQuote(
+                    calibrationProgram,
+                    character,
+                    targetDefintion,
+                    lineOrCPRGMaterialPoints,
+                    lineOrCPRGTimePoints,
+                    forNextRound)
+                .ToDictionary();
+        }
 
+        public MassProductionQuote GetMassProductionQuote(
+            CalibrationProgram calibrationProgram,
+            Character character,
+            int targetDefintion,
+            int lineOrCPRGMaterialPoints,
+            int lineOrCPRGTimePoints,
+            bool forNextRound = false)
+        {
             if (forNextRound)
             {
                 var decalibration = ProductionDataAccess.GetDecalibration(targetDefintion);
@@ -351,7 +366,11 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
                 materialMultiplier = materialMultiplier.Clamp(); //never ask more than what we have in the mission
             }
 
-            var materials = ProductionDescription.GetRequiredComponentsInfo(ProductionInProgressType.massProduction, 1, materialMultiplier, calibrationProgram.Components);
+            IReadOnlyList<ProductionMaterialQuote> materials = ProductionDescription.GetRequiredComponentsQuote(
+                ProductionInProgressType.massProduction,
+                1,
+                materialMultiplier,
+                calibrationProgram.Components);
 
             materials.Count.ThrowIfEqual(0, ErrorCodes.WTFErrorMedicalAttentionSuggested);
 
@@ -366,14 +385,14 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
                 productionTimeSeconds = 10;
             }
 
-            result.Add(k.materials, materials);
-            result.Add(k.productionTime, productionTimeSeconds);
-            result.Add(k.price, price);
-            result.Add(k.definition, targetDefintion);
-            result.Add(k.materialMultiplier, materialMultiplier);
-            result.Add(k.hasBonus, hasBonus);
-            result.Add(k.targetQuantity, calibrationProgram.TargetQuantity);
-            return result;
+            return new MassProductionQuote(
+                targetDefintion,
+                price,
+                productionTimeSeconds,
+                materialMultiplier,
+                hasBonus,
+                calibrationProgram.TargetQuantity,
+                materials);
         }
 
 

@@ -63,6 +63,13 @@ namespace Perpetuum.Services.Autonomous
                         throw new InvalidOperationException($"Autonomous trader options for character {actor.CharacterId} cannot be null.");
                     actor.Trader.Validate(actor.CharacterId);
                 }
+
+                if (string.Equals(actor.Behavior?.Trim(), "manufacturer", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Manufacturer == null)
+                        throw new InvalidOperationException($"Autonomous manufacturer options for character {actor.CharacterId} cannot be null.");
+                    actor.Manufacturer.Validate(actor.CharacterId);
+                }
             }
         }
     }
@@ -85,6 +92,36 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousMiningOptions Mining { get; set; } = new AutonomousMiningOptions();
 
         public AutonomousTraderOptions Trader { get; set; } = new AutonomousTraderOptions();
+
+        public AutonomousManufacturerOptions Manufacturer { get; set; } = new AutonomousManufacturerOptions();
+    }
+
+    public sealed class AutonomousManufacturerOptions
+    {
+        public int TargetDefinition { get; set; }
+
+        [DefaultValue(1), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long Quantity { get; set; } = 1;
+
+        public long MillFacilityEid { get; set; }
+
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool UseCorporationWallet { get; set; }
+
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RetrySeconds { get; set; } = 30;
+
+        public void Validate(int characterId)
+        {
+            if (TargetDefinition <= 0)
+                throw new InvalidOperationException($"Autonomous manufacturer for character {characterId} requires a positive target definition.");
+            if (Quantity <= 0 || Quantity > 1000000000)
+                throw new InvalidOperationException($"Autonomous manufacturer quantity for character {characterId} must be between 1 and 1000000000.");
+            if (MillFacilityEid <= 0)
+                throw new InvalidOperationException($"Autonomous manufacturer for character {characterId} requires a positive mill facility EID.");
+            if (RetrySeconds < 5 || RetrySeconds > 3600)
+                throw new InvalidOperationException($"Autonomous manufacturer retry for character {characterId} must be between 5 and 3600 seconds.");
+        }
     }
 
     public sealed class AutonomousTraderOptions
