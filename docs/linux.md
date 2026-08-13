@@ -193,6 +193,48 @@ actions still enforce extensions, ownership, facility access, compatibility,
 wallets, price, capacity, and transactions. Missing supply or money leaves a
 durable wait state; nothing is spawned, reimbursed, or granted.
 
+The opt-in `mission` behavior provides the first progression loop. The client
+mission-options, start, delivery, and abort handlers and autonomous callers use
+the same typed, audited, character-bound mission service. Extension training
+is likewise shared; administrative exceptions come from the acting
+character's account access and never from `GameActionSource`.
+
+The alpha controller deliberately accepts only configured, non-random mission
+options and executes resolved `fetch_item` targets. It moves observed owned
+cargo through the normal relocation service, undocks, travels and docks using
+the existing player-equivalent world transit, and turns in through the shared
+mission service. The mission engine awards ordinary rewards and mission EP.
+After a configured number of successes, the controller may quote and train a
+configured extension only when the actor has the ordinary prerequisites,
+credits, and EP. Unsupported targets, missing cargo, unavailable missions, and
+insufficient progression resources become durable wait states.
+
+Apply `database/overlays/010_ai_mission_goal.sql` before enabling this behavior.
+The row records intent, accepted GUID, observed destination, success count, and
+blocked reason. On restart the controller reconciles it with the character's
+running mission and own mission history before acting, preventing a persisted
+phase from authorizing or duplicating work.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "mission",
+  "Mission": {
+    "Enabled": true,
+    "Category": "Transport",
+    "Level": 0,
+    "SourceBaseEid": 456,
+    "TargetCount": 1,
+    "Throttle": 0.45,
+    "DockedDwellSeconds": 5,
+    "RetrySeconds": 30,
+    "ProgressionExtensionId": 0,
+    "ProgressionExtensionLevel": 0
+  }
+}
+```
+
 The opt-in `manufacturer` behavior is the first narrow execution loop. It
 requires a dedicated character, a target definition, quantity, and mill
 facility. Its durable row in `dbo.ai_industry_goal` records the original target

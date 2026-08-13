@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using Newtonsoft.Json;
 using Perpetuum.Robots;
+using Perpetuum.Services.MissionEngine;
 using Perpetuum.Zones.Terrains.Materials;
 
 namespace Perpetuum.Services.Autonomous
@@ -84,6 +85,19 @@ namespace Perpetuum.Services.Autonomous
                 {
                     actor.Equipment.Validate(actor.CharacterId);
                 }
+
+                if (string.Equals(actor.Behavior?.Trim(), "mission", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (actor.Mission == null)
+                        throw new InvalidOperationException($"Autonomous mission options for character {actor.CharacterId} cannot be null.");
+                    if (!actor.Mission.Enabled)
+                        throw new InvalidOperationException($"Autonomous mission behavior for character {actor.CharacterId} must be enabled.");
+                    actor.Mission.Validate(actor.CharacterId);
+                }
+                else if (actor.Mission?.Enabled == true)
+                {
+                    actor.Mission.Validate(actor.CharacterId);
+                }
             }
         }
     }
@@ -110,6 +124,70 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousManufacturerOptions Manufacturer { get; set; } = new AutonomousManufacturerOptions();
 
         public AutonomousEquipmentOptions Equipment { get; set; } = new AutonomousEquipmentOptions();
+
+        public AutonomousMissionOptions Mission { get; set; } = new AutonomousMissionOptions();
+    }
+
+    public sealed class AutonomousMissionOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue("Transport"), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public string Category { get; set; } = "Transport";
+
+        [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int Level { get; set; }
+
+        public long SourceBaseEid { get; set; }
+
+        [DefaultValue(1), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int TargetCount { get; set; } = 1;
+
+        [DefaultValue(0.45), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double Throttle { get; set; } = 0.45;
+
+        [DefaultValue(5), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int DockedDwellSeconds { get; set; } = 5;
+
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int RetrySeconds { get; set; } = 30;
+
+        [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int ProgressionExtensionId { get; set; }
+
+        [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int ProgressionExtensionLevel { get; set; }
+
+        public MissionCategory GetCategory()
+        {
+            return Enum.Parse<MissionCategory>(Category, true);
+        }
+
+        public void Validate(int characterId)
+        {
+            if (!Enabled)
+                return;
+            if (!Enum.TryParse(Category, true, out MissionCategory category) ||
+                !Enum.IsDefined(typeof(MissionCategory), category))
+                throw new InvalidOperationException($"Autonomous mission category for character {characterId} is invalid.");
+            if (Level < -1 || Level > 9)
+                throw new InvalidOperationException($"Autonomous mission level for character {characterId} must be between -1 and 9.");
+            if (SourceBaseEid <= 0)
+                throw new InvalidOperationException($"Autonomous mission for character {characterId} requires a positive source base EID.");
+            if (TargetCount < 1 || TargetCount > 1000)
+                throw new InvalidOperationException($"Autonomous mission target count for character {characterId} must be between 1 and 1000.");
+            if (double.IsNaN(Throttle) || double.IsInfinity(Throttle) || Throttle <= 0 || Throttle > 1)
+                throw new InvalidOperationException($"Autonomous mission throttle for character {characterId} must be greater than 0 and at most 1.");
+            if (DockedDwellSeconds < 1 || DockedDwellSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous mission docked dwell for character {characterId} must be between 1 and 3600 seconds.");
+            if (RetrySeconds < 5 || RetrySeconds > 3600)
+                throw new InvalidOperationException($"Autonomous mission retry for character {characterId} must be between 5 and 3600 seconds.");
+            if (ProgressionExtensionId < 0 || ProgressionExtensionLevel < 0 || ProgressionExtensionLevel > 10)
+                throw new InvalidOperationException($"Autonomous mission progression extension for character {characterId} is invalid.");
+            if ((ProgressionExtensionId == 0) != (ProgressionExtensionLevel == 0))
+                throw new InvalidOperationException($"Autonomous mission progression for character {characterId} requires both an extension ID and target level.");
+        }
     }
 
     public sealed class AutonomousEquipmentOptions

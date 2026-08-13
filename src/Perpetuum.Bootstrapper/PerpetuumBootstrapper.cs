@@ -1606,6 +1606,7 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<GameActionAudit>().As<IGameActionAudit>().SingleInstance();
             _ = _builder.RegisterType<UndockActionService>().As<IUndockActionService>();
             _ = _builder.RegisterType<RelocateItemsActionService>().As<IRelocateItemsActionService>();
+            _ = _builder.RegisterType<ExtensionTrainingActionService>().As<IExtensionTrainingActionService>();
             _ = _builder.RegisterType<MarketBuyActionService>().As<IMarketBuyActionService>();
             _ = _builder.RegisterType<MarketCreateSellOrderActionService>().As<IMarketCreateSellOrderActionService>();
             _ = _builder.RegisterType<ProductionRefineActionService>().As<IProductionRefineActionService>();
@@ -1616,6 +1617,7 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<ProductionRepairActionService>().As<IProductionRepairActionService>();
             _ = _builder.RegisterType<RobotFittingActionService>().As<IRobotFittingActionService>();
             _ = _builder.RegisterType<SelectActiveRobotActionService>().As<ISelectActiveRobotActionService>();
+            _ = _builder.RegisterType<MissionActionService>().As<IMissionActionService>();
             _ = _builder.RegisterType<EquipAmmoActionService>().As<IEquipAmmoActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
             _ = _builder.RegisterType<TeleportActionService>().As<ITeleportActionService>();
@@ -1671,6 +1673,13 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<DatabaseAutonomousEquipmentGoalStore>()
                 .As<IAutonomousEquipmentGoalStore>()
                 .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousMissionGoalStore>()
+                .As<IAutonomousMissionGoalStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousMissionObservationService>()
+                .As<IAutonomousMissionObservationService>();
+            _ = _builder.RegisterType<AutonomousMissionController>()
+                .As<IAutonomousMissionController>();
             _ = _builder.RegisterType<AutonomousRegionalMarketService>()
                 .As<IAutonomousRegionalMarketService>();
             _ = _builder.RegisterType<AutonomousTradeExecutionService>()
@@ -1701,6 +1710,8 @@ namespace Perpetuum.Bootstrapper
                 .Keyed<IAutonomousActorBehavior>("manufacturer");
             _ = _builder.RegisterType<EquipmentAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("equipment");
+            _ = _builder.RegisterType<MissionAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("mission");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();
