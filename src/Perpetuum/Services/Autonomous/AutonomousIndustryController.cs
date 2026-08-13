@@ -79,10 +79,16 @@ namespace Perpetuum.Services.Autonomous
         public static AutonomousIndustryProductionStep SelectNextRefiningStep(
             AutonomousIndustryPlan plan)
         {
+            AutonomousIndustryProductionStep next = SelectNextProductionStep(plan);
+            return next?.Recipe.Process == ProductionRecipeProcess.Refining ? next : null;
+        }
+
+        public static AutonomousIndustryProductionStep SelectNextProductionStep(
+            AutonomousIndustryPlan plan)
+        {
             if (plan == null)
                 throw new ArgumentNullException(nameof(plan));
-            AutonomousIndustryProductionStep next = plan.ProductionSteps.FirstOrDefault();
-            return next?.Recipe.Process == ProductionRecipeProcess.Refining ? next : null;
+            return plan.ProductionSteps.FirstOrDefault();
         }
 
         public static int SelectRefineAmount(AutonomousIndustryProductionStep step)
@@ -186,7 +192,6 @@ namespace Perpetuum.Services.Autonomous
     {
         private readonly ProductionProcessor _productionProcessor;
         private readonly IAutonomousIndustryPlanner _planner;
-        private readonly IProductionRecipeCatalog _recipes;
         private readonly IProductionResearchActionService _research;
         private readonly IProductionCalibrationActionService _calibration;
         private readonly IProductionPrototypeActionService _prototype;
@@ -199,7 +204,6 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousIndustryController(
             ProductionProcessor productionProcessor,
             IAutonomousIndustryPlanner planner,
-            IProductionRecipeCatalog recipes,
             IProductionResearchActionService research,
             IProductionCalibrationActionService calibration,
             IProductionPrototypeActionService prototype,
@@ -211,7 +215,6 @@ namespace Perpetuum.Services.Autonomous
         {
             _productionProcessor = productionProcessor ?? throw new ArgumentNullException(nameof(productionProcessor));
             _planner = planner ?? throw new ArgumentNullException(nameof(planner));
-            _recipes = recipes ?? throw new ArgumentNullException(nameof(recipes));
             _research = research ?? throw new ArgumentNullException(nameof(research));
             _calibration = calibration ?? throw new ArgumentNullException(nameof(calibration));
             _prototype = prototype ?? throw new ArgumentNullException(nameof(prototype));
@@ -268,18 +271,60 @@ namespace Perpetuum.Services.Autonomous
 
             long completionQuantity = checked(state.InitialInventoryQuantity + state.TargetQuantity);
             bool complete = GetQuantity(inventory, state.TargetDefinition) >= completionQuantity;
+            if (complete)
+            {
+                ProductionLine completedLine = FindUsableLine(
+                    context,
+                    state,
+                    state.TargetDefinition);
+                WriteState(state.WithProgress("Complete", completedLine?.Id));
+                return;
+            }
+
+            AutonomousIndustryPlan plan = _planner.Plan(
+                state.TargetDefinition,
+                completionQuantity - GetQuantity(inventory, state.TargetDefinition),
+                AutonomousManufacturerPolicy.ForRemainingTarget(
+                    inventory,
+                    state.TargetDefinition));
+            if (!plan.IsSuccessful)
+            {
+                WriteState(state.WithProgress(
+                    "WaitingPlanning",
+                    blockedReason: plan.Failure.ToString()));
+                return;
+            }
+
+            AutonomousIndustryProductionStep step =
+                AutonomousManufacturerPolicy.SelectNextProductionStep(plan);
+            if (step == null)
+            {
+                if (plan.Procurement.Count > 0)
+                {
+                    WaitForProcurement(
+                        context,
+                        options,
+                        state,
+                        "WaitingPlanInputs",
+                        plan.Procurement,
+                        "no_producible_recipe");
+                }
+                else
+                {
+                    WriteState(state.WithProgress(
+                        "WaitingPlanning",
+                        blockedReason: "no_executable_production_step"));
+                }
+                return;
+            }
+
+            int workDefinition = step.Definition;
+            ProductionLine line = FindUsableLine(context, state, workDefinition);
             ProductionInProgress running = _productionProcessor.RunningProductions
                 .GetByCharacter(context.Actor)
                 .FirstOrDefault(production =>
                     production.type == ProductionInProgressType.massProduction &&
-                    production.resultDefinition == state.TargetDefinition);
-            ProductionLine line = FindUsableLine(context, state);
-
-            if (complete)
-            {
-                WriteState(state.WithProgress("Complete", line?.Id));
-                return;
-            }
+                    production.resultDefinition == workDefinition);
             if (running != null)
             {
                 WriteState(state.WithProgress("WaitingProduction", line?.Id, running.ID));
@@ -290,21 +335,35 @@ namespace Perpetuum.Services.Autonomous
                 WriteState(state.WithProgress("ObservingProductionCompletion", line?.Id));
                 return;
             }
-            if (TryHandleRefiningPrerequisite(
-                    context,
-                    options,
-                    state,
-                    inventory,
-                    completionQuantity))
+
+            if (step.Recipe.Process == ProductionRecipeProcess.Refining)
             {
+                HandleRefiningStep(context, options, state, inventory, step);
                 return;
             }
             if (line == null)
             {
-                HandleCalibrationPrerequisite(context, options, state, container, inventory, completionQuantity);
+                HandleCalibrationPrerequisite(
+                    context,
+                    options,
+                    state,
+                    container,
+                    inventory,
+                    step.Recipe,
+                    plan.Procurement);
                 return;
             }
 
+            TryStartProduction(context, options, state, inventory, line);
+        }
+
+        private void TryStartProduction(
+            GameActionContext context,
+            AutonomousManufacturerOptions options,
+            AutonomousIndustryGoalState state,
+            IReadOnlyDictionary<int, long> inventory,
+            ProductionLine line)
+        {
             try
             {
                 var action = new ProductionMassProductionAction(
@@ -342,32 +401,13 @@ namespace Perpetuum.Services.Autonomous
             }
         }
 
-        private bool TryHandleRefiningPrerequisite(
+        private void HandleRefiningStep(
             GameActionContext context,
             AutonomousManufacturerOptions options,
             AutonomousIndustryGoalState state,
             IReadOnlyDictionary<int, long> inventory,
-            long completionQuantity)
+            AutonomousIndustryProductionStep step)
         {
-            AutonomousIndustryPlan plan = _planner.Plan(
-                state.TargetDefinition,
-                completionQuantity - GetQuantity(inventory, state.TargetDefinition),
-                AutonomousManufacturerPolicy.ForRemainingTarget(
-                    inventory,
-                    state.TargetDefinition));
-            if (!plan.IsSuccessful)
-            {
-                WriteState(state.WithProgress(
-                    "WaitingPlanning",
-                    blockedReason: plan.Failure.ToString()));
-                return true;
-            }
-
-            AutonomousIndustryProductionStep step =
-                AutonomousManufacturerPolicy.SelectNextRefiningStep(plan);
-            if (step == null)
-                return false;
-
             int amount = AutonomousManufacturerPolicy.SelectRefineAmount(step);
             if (state.RefineryFacilityEid <= 0)
             {
@@ -379,7 +419,7 @@ namespace Perpetuum.Services.Autonomous
                     new Dictionary<int, long> {{step.Definition, amount}},
                     "refinery_facility_required",
                     preferredDefinition: step.Definition);
-                return true;
+                return;
             }
 
             try
@@ -400,7 +440,7 @@ namespace Perpetuum.Services.Autonomous
                         "WaitingRefiningMaterials",
                         missing,
                         "refining_components_missing");
-                    return true;
+                    return;
                 }
 
                 _refine.Execute(context, action);
@@ -415,7 +455,6 @@ namespace Perpetuum.Services.Autonomous
                     procurement: state.Procurement,
                     blockedReason: exception.error.ToString()));
             }
-            return true;
         }
 
         private void HandleCalibrationPrerequisite(
@@ -424,12 +463,15 @@ namespace Perpetuum.Services.Autonomous
             AutonomousIndustryGoalState state,
             PublicContainer container,
             IReadOnlyDictionary<int, long> inventory,
-            long completionQuantity)
+            ProductionRecipe recipe,
+            IReadOnlyDictionary<int, long> planningProcurement)
         {
-            if (!_recipes.TryGet(state.TargetDefinition, out ProductionRecipe recipe) ||
-                !recipe.CalibrationProgramDefinition.HasValue)
+            if (!recipe.CalibrationProgramDefinition.HasValue)
             {
-                WritePlanningFailure(state, inventory, completionQuantity, "calibration_recipe_unavailable");
+                WriteState(state.WithProgress(
+                    "WaitingCalibration",
+                    procurement: planningProcurement,
+                    blockedReason: "calibration_recipe_unavailable"));
                 return;
             }
 
@@ -448,7 +490,7 @@ namespace Perpetuum.Services.Autonomous
             CalibrationProgram calibrationProgram = SelectCalibrationProgram(container, calibrationDefinition);
             if (calibrationProgram != null)
             {
-                TryCalibrate(context, state, calibrationProgram);
+                TryCalibrate(context, state, calibrationProgram, recipe.Definition);
                 return;
             }
             if (state.Phase == "WaitingResearch" && state.ProductionId.HasValue)
@@ -459,10 +501,6 @@ namespace Perpetuum.Services.Autonomous
 
             if (state.ResearchFacilityEid <= 0)
             {
-                AutonomousIndustryPlan plan = _planner.Plan(
-                    state.TargetDefinition,
-                    completionQuantity - GetQuantity(inventory, state.TargetDefinition),
-                    inventory);
                 IReadOnlyDictionary<int, long> calibrationProcurement =
                     new Dictionary<int, long> {{calibrationDefinition, 1}};
                 WaitForProcurement(
@@ -471,11 +509,9 @@ namespace Perpetuum.Services.Autonomous
                     state,
                     "WaitingCalibration",
                     AutonomousManufacturerPolicy.MergeProcurement(
-                        plan.IsSuccessful ? plan.Procurement : null,
+                        planningProcurement,
                         calibrationProcurement),
-                    plan.IsSuccessful
-                        ? "calibration_program_required"
-                        : plan.Failure.ToString(),
+                    "calibration_program_required",
                     preferredDefinition: calibrationDefinition);
                 return;
             }
@@ -484,7 +520,12 @@ namespace Perpetuum.Services.Autonomous
             Item sourceItem = SelectResearchSource(container, sourceDefinition);
             if (sourceItem == null && recipe.RequiresPrototype && state.PrototypeFacilityEid > 0)
             {
-                TryCreatePrototype(context, options, state, inventory, recipe);
+                TryCreatePrototype(
+                    context,
+                    options,
+                    state,
+                    inventory,
+                    recipe);
                 return;
             }
             ResearchKit researchKit = SelectResearchKit(container, recipe.ResearchLevel);
@@ -581,7 +622,7 @@ namespace Perpetuum.Services.Autonomous
             {
                 var action = new ProductionPrototypeAction(
                     state.PrototypeFacilityEid,
-                    state.TargetDefinition,
+                    recipe.Definition,
                     options.UseCorporationWallet);
                 PrototypeQuote quote = _prototype.Quote(context, action);
                 IReadOnlyDictionary<int, long> missing =
@@ -679,7 +720,8 @@ namespace Perpetuum.Services.Autonomous
         private void TryCalibrate(
             GameActionContext context,
             AutonomousIndustryGoalState state,
-            CalibrationProgram calibrationProgram)
+            CalibrationProgram calibrationProgram,
+            int workDefinition)
         {
             try
             {
@@ -688,7 +730,7 @@ namespace Perpetuum.Services.Autonomous
                     calibrationProgram.Eid);
                 _calibration.Quote(context, action);
                 _calibration.Execute(context, action);
-                ProductionLine line = FindUsableLine(context, state);
+                ProductionLine line = FindUsableLine(context, state, workDefinition);
                 WriteState(state.WithProgress(
                     "ReadyProduction",
                     line?.Id,
@@ -701,24 +743,6 @@ namespace Perpetuum.Services.Autonomous
                     procurement: state.Procurement,
                     blockedReason: exception.error.ToString()));
             }
-        }
-
-        private void WritePlanningFailure(
-            AutonomousIndustryGoalState state,
-            IReadOnlyDictionary<int, long> inventory,
-            long completionQuantity,
-            string reason)
-        {
-            AutonomousIndustryPlan plan = _planner.Plan(
-                state.TargetDefinition,
-                completionQuantity - GetQuantity(inventory, state.TargetDefinition),
-                AutonomousManufacturerPolicy.ForRemainingTarget(
-                    inventory,
-                    state.TargetDefinition));
-            WriteState(state.WithProgress(
-                "WaitingCalibration",
-                procurement: plan.IsSuccessful ? plan.Procurement : null,
-                blockedReason: plan.IsSuccessful ? reason : plan.Failure.ToString()));
         }
 
         private static CalibrationProgram SelectCalibrationProgram(
@@ -762,11 +786,14 @@ namespace Perpetuum.Services.Autonomous
                 .FirstOrDefault();
         }
 
-        private ProductionLine FindUsableLine(GameActionContext context, AutonomousIndustryGoalState state)
+        private ProductionLine FindUsableLine(
+            GameActionContext context,
+            AutonomousIndustryGoalState state,
+            int workDefinition)
         {
             IEnumerable<ProductionLine> lines = ProductionLine
                 .GetLinesByCharacter(context.Actor.Id, state.MillFacilityEid)
-                .Where(line => line.TargetDefinition == state.TargetDefinition);
+                .Where(line => line.TargetDefinition == workDefinition);
             if (state.LineId.HasValue)
             {
                 ProductionLine persisted = lines.FirstOrDefault(line => line.Id == state.LineId.Value);

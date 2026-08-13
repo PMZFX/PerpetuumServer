@@ -202,9 +202,13 @@ inventory result is authoritative, so restart replanning neither forgets the
 output nor repeats already satisfied work. With no refinery, the controller
 waits and may procure the refined input through the normal market when
 separately enabled. With no research facility, the controller waits for a
-calibration program acquired through the normal economy. With no prototyper, it waits for
-the required prototype or item. Configured facilities must be accessible from
-the character's current docking base. The ordinary action services enforce
+calibration program acquired through the normal economy. Manufactured
+intermediates use the same prototype, research, calibration, and one-cycle mill
+path as the final target. After each job the controller replans from real
+inventory and chooses the next ordered definition, while a matching running job
+wins over any retry after restart. With no prototyper, it waits for the required
+prototype or item. Configured facilities must be accessible from the
+character's current docking base. The ordinary action services enforce
 that relationship, tech-tree unlocks, slots, materials, wallets, time, and all
 other character-specific production rules. A missing unlock is a wait state;
 the controller never spends or grants research points.

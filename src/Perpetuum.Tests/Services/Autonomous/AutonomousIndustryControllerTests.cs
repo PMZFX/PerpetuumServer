@@ -129,6 +129,41 @@ namespace Perpetuum.Tests.Services.Autonomous
                 planner.Plan(300, 2, remainingInventory)).Definition);
         }
 
+        [Fact]
+        public void PlannerSelectsIntermediateMassProductionBeforeFinalTarget()
+        {
+            var recipes = new DictionaryRecipeCatalog(
+                new ProductionRecipe(
+                    200,
+                    "intermediate",
+                    2,
+                    new[] {new ProductionRecipeComponent(100, 3)},
+                    ProductionRecipeProcess.MassProduction,
+                    210,
+                    1,
+                    220),
+                new ProductionRecipe(
+                    300,
+                    "final",
+                    1,
+                    new[] {new ProductionRecipeComponent(200, 2)},
+                    ProductionRecipeProcess.MassProduction,
+                    310,
+                    2,
+                    320));
+            var planner = new AutonomousIndustryPlanner(recipes);
+
+            AutonomousIndustryProductionStep intermediate =
+                AutonomousManufacturerPolicy.SelectNextProductionStep(planner.Plan(300, 1));
+            AutonomousIndustryProductionStep final =
+                AutonomousManufacturerPolicy.SelectNextProductionStep(
+                    planner.Plan(300, 1, new Dictionary<int, long> {{200, 2}}));
+
+            Assert.Equal(200, intermediate.Definition);
+            Assert.Equal(ProductionRecipeProcess.MassProduction, intermediate.Recipe.Process);
+            Assert.Equal(300, final.Definition);
+        }
+
         [Theory]
         [InlineData(true, false, false, false, AutonomousManufacturerDirective.WaitForResearch)]
         [InlineData(false, true, false, false, AutonomousManufacturerDirective.CalibrateLine)]
