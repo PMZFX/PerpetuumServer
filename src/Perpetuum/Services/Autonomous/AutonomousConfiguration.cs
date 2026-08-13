@@ -111,6 +111,9 @@ namespace Perpetuum.Services.Autonomous
         [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public long PrototypeFacilityEid { get; set; }
 
+        [DefaultValue(0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public long RefineryFacilityEid { get; set; }
+
         [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
         public bool UseCorporationWallet { get; set; }
 
@@ -132,6 +135,8 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous manufacturer research facility EID for character {characterId} cannot be negative.");
             if (PrototypeFacilityEid < 0)
                 throw new InvalidOperationException($"Autonomous manufacturer prototype facility EID for character {characterId} cannot be negative.");
+            if (RefineryFacilityEid < 0)
+                throw new InvalidOperationException($"Autonomous manufacturer refinery facility EID for character {characterId} cannot be negative.");
             if (RetrySeconds < 5 || RetrySeconds > 3600)
                 throw new InvalidOperationException($"Autonomous manufacturer retry for character {characterId} must be between 5 and 3600 seconds.");
             if (Procurement == null)

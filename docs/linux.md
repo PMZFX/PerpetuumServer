@@ -167,7 +167,8 @@ persisted wait states and procurement goals; no item, credit, line, research
 point, unlock, or completion is granted. The strategic recursive planner may
 supply procurement leaves, but it never authorizes execution. Apply
 `database/overlays/006_ai_industry_goal.sql` and
-`database/overlays/007_ai_industry_lifecycle.sql` before enabling the behavior.
+`database/overlays/007_ai_industry_lifecycle.sql`, and
+`database/overlays/008_ai_industry_refinery.sql` before enabling the behavior.
 
 ```json
 {
@@ -180,6 +181,7 @@ supply procurement leaves, but it never authorizes execution. Apply
     "MillFacilityEid": 456,
     "ResearchFacilityEid": 457,
     "PrototypeFacilityEid": 458,
+    "RefineryFacilityEid": 459,
     "UseCorporationWallet": false,
     "RetrySeconds": 30,
     "Procurement": {
@@ -192,9 +194,15 @@ supply procurement leaves, but it never authorizes execution. Apply
 }
 ```
 
-`ResearchFacilityEid` and `PrototypeFacilityEid` are optional and default to
-zero. With no research facility, the controller waits for a calibration
-program acquired through the normal economy. With no prototyper, it waits for
+`ResearchFacilityEid`, `PrototypeFacilityEid`, and `RefineryFacilityEid` are
+optional and default to zero. When the planner's next ordered step is refining,
+a configured refinery is quoted for the exact character and bounded required
+amount immediately before the shared refine action is executed. The synchronous
+inventory result is authoritative, so restart replanning neither forgets the
+output nor repeats already satisfied work. With no refinery, the controller
+waits and may procure the refined input through the normal market when
+separately enabled. With no research facility, the controller waits for a
+calibration program acquired through the normal economy. With no prototyper, it waits for
 the required prototype or item. Configured facilities must be accessible from
 the character's current docking base. The ordinary action services enforce
 that relationship, tech-tree unlocks, slots, materials, wallets, time, and all

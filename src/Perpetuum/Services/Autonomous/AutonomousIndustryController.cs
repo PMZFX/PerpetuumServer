@@ -55,6 +55,56 @@ namespace Perpetuum.Services.Autonomous
         }
 
         public static IReadOnlyDictionary<int, long> FindMissingMaterials(
+            RefineQuote quote,
+            IReadOnlyDictionary<int, long> inventory)
+        {
+            if (quote == null)
+                throw new ArgumentNullException(nameof(quote));
+            inventory = inventory ?? new Dictionary<int, long>();
+            return quote.Components
+                .GroupBy(component => component.Definition)
+                .Select(group => new
+                {
+                    Definition = group.Key,
+                    Missing = Math.Max(
+                        0,
+                        group.Sum(component => (long)component.EffectiveAmount) -
+                        GetQuantity(inventory, group.Key))
+                })
+                .Where(item => item.Missing > 0)
+                .OrderBy(item => item.Definition)
+                .ToDictionary(item => item.Definition, item => item.Missing);
+        }
+
+        public static AutonomousIndustryProductionStep SelectNextRefiningStep(
+            AutonomousIndustryPlan plan)
+        {
+            if (plan == null)
+                throw new ArgumentNullException(nameof(plan));
+            AutonomousIndustryProductionStep next = plan.ProductionSteps.FirstOrDefault();
+            return next?.Recipe.Process == ProductionRecipeProcess.Refining ? next : null;
+        }
+
+        public static int SelectRefineAmount(AutonomousIndustryProductionStep step)
+        {
+            if (step == null)
+                throw new ArgumentNullException(nameof(step));
+            return (int)Math.Min(step.OutputQuantity, ProductionRefineAmountPolicy.MaximumAmount);
+        }
+
+        public static IReadOnlyDictionary<int, long> ForRemainingTarget(
+            IReadOnlyDictionary<int, long> inventory,
+            int targetDefinition)
+        {
+            if (targetDefinition <= 0)
+                throw new ArgumentOutOfRangeException(nameof(targetDefinition));
+            return (inventory ?? new Dictionary<int, long>())
+                .Where(item => item.Key != targetDefinition)
+                .OrderBy(item => item.Key)
+                .ToDictionary(item => item.Key, item => item.Value);
+        }
+
+        public static IReadOnlyDictionary<int, long> FindMissingMaterials(
             IEnumerable<ProductionMaterialQuote> materials,
             IReadOnlyDictionary<int, long> inventory)
         {
@@ -140,6 +190,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IProductionResearchActionService _research;
         private readonly IProductionCalibrationActionService _calibration;
         private readonly IProductionPrototypeActionService _prototype;
+        private readonly IProductionRefineActionService _refine;
         private readonly IProductionMassProductionActionService _massProduction;
         private readonly IAutonomousIndustryProcurementService _procurement;
         private readonly IAutonomousIndustryGoalStore _goals;
@@ -152,6 +203,7 @@ namespace Perpetuum.Services.Autonomous
             IProductionResearchActionService research,
             IProductionCalibrationActionService calibration,
             IProductionPrototypeActionService prototype,
+            IProductionRefineActionService refine,
             IProductionMassProductionActionService massProduction,
             IAutonomousIndustryProcurementService procurement,
             IAutonomousIndustryGoalStore goals,
@@ -163,6 +215,7 @@ namespace Perpetuum.Services.Autonomous
             _research = research ?? throw new ArgumentNullException(nameof(research));
             _calibration = calibration ?? throw new ArgumentNullException(nameof(calibration));
             _prototype = prototype ?? throw new ArgumentNullException(nameof(prototype));
+            _refine = refine ?? throw new ArgumentNullException(nameof(refine));
             _massProduction = massProduction ?? throw new ArgumentNullException(nameof(massProduction));
             _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
@@ -182,7 +235,8 @@ namespace Perpetuum.Services.Autonomous
                  state.TargetQuantity != options.Quantity ||
                  state.MillFacilityEid != options.MillFacilityEid ||
                  state.ResearchFacilityEid != options.ResearchFacilityEid ||
-                 state.PrototypeFacilityEid != options.PrototypeFacilityEid))
+                 state.PrototypeFacilityEid != options.PrototypeFacilityEid ||
+                 state.RefineryFacilityEid != options.RefineryFacilityEid))
             {
                 WriteState(state.WithProgress("BlockedConfiguration", blockedReason: "persistent_goal_mismatch"));
                 return;
@@ -207,7 +261,8 @@ namespace Perpetuum.Services.Autonomous
                     options.MillFacilityEid,
                     "Planning",
                     researchFacilityEid: options.ResearchFacilityEid,
-                    prototypeFacilityEid: options.PrototypeFacilityEid);
+                    prototypeFacilityEid: options.PrototypeFacilityEid,
+                    refineryFacilityEid: options.RefineryFacilityEid);
                 WriteState(state);
             }
 
@@ -233,6 +288,15 @@ namespace Perpetuum.Services.Autonomous
             if (state.Phase == "WaitingProduction" && state.ProductionId.HasValue)
             {
                 WriteState(state.WithProgress("ObservingProductionCompletion", line?.Id));
+                return;
+            }
+            if (TryHandleRefiningPrerequisite(
+                    context,
+                    options,
+                    state,
+                    inventory,
+                    completionQuantity))
+            {
                 return;
             }
             if (line == null)
@@ -276,6 +340,82 @@ namespace Perpetuum.Services.Autonomous
                     procurement: state.Procurement,
                     blockedReason: exception.error.ToString()));
             }
+        }
+
+        private bool TryHandleRefiningPrerequisite(
+            GameActionContext context,
+            AutonomousManufacturerOptions options,
+            AutonomousIndustryGoalState state,
+            IReadOnlyDictionary<int, long> inventory,
+            long completionQuantity)
+        {
+            AutonomousIndustryPlan plan = _planner.Plan(
+                state.TargetDefinition,
+                completionQuantity - GetQuantity(inventory, state.TargetDefinition),
+                AutonomousManufacturerPolicy.ForRemainingTarget(
+                    inventory,
+                    state.TargetDefinition));
+            if (!plan.IsSuccessful)
+            {
+                WriteState(state.WithProgress(
+                    "WaitingPlanning",
+                    blockedReason: plan.Failure.ToString()));
+                return true;
+            }
+
+            AutonomousIndustryProductionStep step =
+                AutonomousManufacturerPolicy.SelectNextRefiningStep(plan);
+            if (step == null)
+                return false;
+
+            int amount = AutonomousManufacturerPolicy.SelectRefineAmount(step);
+            if (state.RefineryFacilityEid <= 0)
+            {
+                WaitForProcurement(
+                    context,
+                    options,
+                    state,
+                    "WaitingRefinery",
+                    new Dictionary<int, long> {{step.Definition, amount}},
+                    "refinery_facility_required",
+                    preferredDefinition: step.Definition);
+                return true;
+            }
+
+            try
+            {
+                var action = new ProductionRefineAction(
+                    state.RefineryFacilityEid,
+                    step.Definition,
+                    amount);
+                RefineQuote quote = _refine.Quote(context, action);
+                IReadOnlyDictionary<int, long> missing =
+                    AutonomousManufacturerPolicy.FindMissingMaterials(quote, inventory);
+                if (missing.Count > 0)
+                {
+                    WaitForProcurement(
+                        context,
+                        options,
+                        state,
+                        "WaitingRefiningMaterials",
+                        missing,
+                        "refining_components_missing");
+                    return true;
+                }
+
+                _refine.Execute(context, action);
+                WriteState(state.WithProgress(
+                    "RefinedMaterials",
+                    blockedReason: $"refined_{step.Definition}_{quote.TargetAmount}"));
+            }
+            catch (PerpetuumException exception)
+            {
+                WriteState(state.WithProgress(
+                    "WaitingPolicy",
+                    procurement: state.Procurement,
+                    blockedReason: exception.error.ToString()));
+            }
+            return true;
         }
 
         private void HandleCalibrationPrerequisite(
@@ -572,7 +712,9 @@ namespace Perpetuum.Services.Autonomous
             AutonomousIndustryPlan plan = _planner.Plan(
                 state.TargetDefinition,
                 completionQuantity - GetQuantity(inventory, state.TargetDefinition),
-                inventory);
+                AutonomousManufacturerPolicy.ForRemainingTarget(
+                    inventory,
+                    state.TargetDefinition));
             WriteState(state.WithProgress(
                 "WaitingCalibration",
                 procurement: plan.IsSuccessful ? plan.Procurement : null,

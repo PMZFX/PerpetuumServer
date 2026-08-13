@@ -293,6 +293,10 @@ namespace Perpetuum.Tests.Services.Autonomous
             options.ResearchFacilityEid = 0;
             options.PrototypeFacilityEid = -1;
             Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.PrototypeFacilityEid = 0;
+            options.RefineryFacilityEid = -1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
         }
 
         [Fact]
