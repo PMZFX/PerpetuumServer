@@ -99,7 +99,9 @@ namespace Perpetuum.Services.Actions
                 var market = seller.GetCurrentDockingBase().GetMarketOrThrow();
                 var corporationEid = seller.CorporationEid;
                 var publicContainer = seller.GetPublicContainerWithItems();
-                var sourceContainer = (Container)publicContainer.GetItemOrThrow(action.ContainerEid, true);
+                var sourceContainer = action.ContainerEid == publicContainer.Eid
+                    ? publicContainer
+                    : (Container)publicContainer.GetItemOrThrow(action.ContainerEid, true);
 
                 bool forCorporation = action.ForCorporation;
                 long? forMembersOf = null;

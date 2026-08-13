@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Perpetuum.Containers;
+using Perpetuum.Data;
 using Perpetuum.EntityFramework;
 using Perpetuum.Items;
 using Perpetuum.Services.Actions;
@@ -198,6 +199,8 @@ namespace Perpetuum.Services.Autonomous
         private readonly IProductionRefineActionService _refine;
         private readonly IProductionMassProductionActionService _massProduction;
         private readonly IAutonomousIndustryProcurementService _procurement;
+        private readonly IAutonomousMarketObservationService _market;
+        private readonly IAutonomousManufacturedOutputService _output;
         private readonly IAutonomousIndustryGoalStore _goals;
         private readonly IAutonomousActorAudit _audit;
 
@@ -210,6 +213,8 @@ namespace Perpetuum.Services.Autonomous
             IProductionRefineActionService refine,
             IProductionMassProductionActionService massProduction,
             IAutonomousIndustryProcurementService procurement,
+            IAutonomousMarketObservationService market,
+            IAutonomousManufacturedOutputService output,
             IAutonomousIndustryGoalStore goals,
             IAutonomousActorAudit audit)
         {
@@ -221,6 +226,8 @@ namespace Perpetuum.Services.Autonomous
             _refine = refine ?? throw new ArgumentNullException(nameof(refine));
             _massProduction = massProduction ?? throw new ArgumentNullException(nameof(massProduction));
             _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
+            _market = market ?? throw new ArgumentNullException(nameof(market));
+            _output = output ?? throw new ArgumentNullException(nameof(output));
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
             _audit = audit ?? throw new ArgumentNullException(nameof(audit));
         }
@@ -269,10 +276,52 @@ namespace Perpetuum.Services.Autonomous
                 WriteState(state);
             }
 
-            long completionQuantity = checked(state.InitialInventoryQuantity + state.TargetQuantity);
+            if (!options.Sales.Enabled && state.CommittedDemandQuantity > 0)
+            {
+                WriteState(state.WithProgress(
+                    "BlockedConfiguration",
+                    blockedReason: "sales_disabled_with_committed_demand"));
+                return;
+            }
+
+            if (options.Sales.Enabled && state.CommittedDemandQuantity == 0)
+            {
+                try
+                {
+                    AutonomousMarketQuote quote = _market.Observe(context, state.TargetDefinition);
+                    long demandQuantity = AutonomousManufacturerEconomyPolicy.SelectDemandQuantity(
+                        state.TargetQuantity,
+                        options.Sales.MinimumUnitPrice,
+                        quote.BestBuyPrice,
+                        quote.BestBuyQuantity,
+                        quote.BestBuyIsVendor);
+                    if (demandQuantity == 0)
+                    {
+                        WriteState(state.WithDemand(0, "WaitingDemand", "no_eligible_local_buy_order"));
+                        return;
+                    }
+
+                    state = state.WithDemand(demandQuantity, "DemandCommitted");
+                    WriteState(state);
+                }
+                catch (PerpetuumException exception)
+                {
+                    WriteState(state.WithDemand(0, "WaitingMarketPolicy", exception.error.ToString()));
+                    return;
+                }
+            }
+
+            long completionQuantity = AutonomousManufacturerEconomyPolicy.CompletionQuantity(
+                state,
+                options.Sales.Enabled);
             bool complete = GetQuantity(inventory, state.TargetDefinition) >= completionQuantity;
             if (complete)
             {
+                if (options.Sales.Enabled)
+                {
+                    TrySellOutput(context, options, state, inventory);
+                    return;
+                }
                 ProductionLine completedLine = FindUsableLine(
                     context,
                     state,
@@ -355,6 +404,66 @@ namespace Perpetuum.Services.Autonomous
             }
 
             TryStartProduction(context, options, state, inventory, line);
+        }
+
+        private void TrySellOutput(
+            GameActionContext context,
+            AutonomousManufacturerOptions options,
+            AutonomousIndustryGoalState state,
+            IReadOnlyDictionary<int, long> inventory)
+        {
+            long available = Math.Max(
+                0,
+                GetQuantity(inventory, state.TargetDefinition) - state.InitialInventoryQuantity);
+            long maximumQuantity = Math.Min(available, state.CommittedDemandQuantity);
+            if (maximumQuantity <= 0)
+            {
+                WriteState(state.WithProgress(
+                    "WaitingOutput",
+                    blockedReason: "committed_output_not_available"));
+                return;
+            }
+
+            try
+            {
+                using (var scope = Db.CreateTransaction())
+                {
+                    AutonomousManufacturedOutputDisposition disposition = _output.SellToDemand(
+                        context,
+                        state.TargetDefinition,
+                        maximumQuantity,
+                        options);
+                    switch (disposition.Result)
+                    {
+                        case AutonomousManufacturedOutputResult.Sold:
+                            long remainingDemand = AutonomousManufacturerEconomyPolicy.RemainingDemand(
+                                state.CommittedDemandQuantity,
+                                disposition.Quantity);
+                            WriteState(state.WithDemand(
+                                remainingDemand,
+                                remainingDemand == 0 ? "WaitingDemand" : "WaitingSaleDemand",
+                                $"sold_{disposition.Quantity}_at_{disposition.UnitPrice}"));
+                            break;
+                        case AutonomousManufacturedOutputResult.NoDemand:
+                            WriteState(state.WithProgress(
+                                "WaitingSaleDemand",
+                                blockedReason: "committed_buy_order_unavailable"));
+                            break;
+                        default:
+                            WriteState(state.WithProgress(
+                                "WaitingOutput",
+                                blockedReason: "manufactured_output_not_sellable"));
+                            break;
+                    }
+                    scope.Complete();
+                }
+            }
+            catch (PerpetuumException exception)
+            {
+                WriteState(state.WithProgress(
+                    "WaitingSalePolicy",
+                    blockedReason: exception.error.ToString()));
+            }
         }
 
         private void TryStartProduction(

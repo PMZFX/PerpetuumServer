@@ -417,6 +417,25 @@ namespace Perpetuum.Tests.Services.Autonomous
         }
 
         [Fact]
+        public void ManufacturerClosedEconomyIsExplicitAndPriceBounded()
+        {
+            var options = new AutonomousManufacturerSalesOptions();
+
+            options.Validate(21);
+            Assert.False(options.Enabled);
+            Assert.Equal(1.0, options.MinimumUnitPrice);
+            Assert.Equal(24, options.OrderDurationHours);
+
+            options.Enabled = true;
+            options.MinimumUnitPrice = 0;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+
+            options.MinimumUnitPrice = 5;
+            options.OrderDurationHours = 721;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+        }
+
+        [Fact]
         public void EquipmentBehaviorRequiresExplicitRobotAndRepairFacility()
         {
             var definition = new AutonomousActorDefinition

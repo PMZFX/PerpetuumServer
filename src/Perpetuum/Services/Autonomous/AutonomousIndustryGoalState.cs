@@ -21,7 +21,8 @@ namespace Perpetuum.Services.Autonomous
             string blockedReason = null,
             long researchFacilityEid = 0,
             long prototypeFacilityEid = 0,
-            long refineryFacilityEid = 0)
+            long refineryFacilityEid = 0,
+            long committedDemandQuantity = 0)
         {
             if (characterId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(characterId));
@@ -39,6 +40,8 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(prototypeFacilityEid));
             if (refineryFacilityEid < 0)
                 throw new ArgumentOutOfRangeException(nameof(refineryFacilityEid));
+            if (committedDemandQuantity < 0 || committedDemandQuantity > targetQuantity)
+                throw new ArgumentOutOfRangeException(nameof(committedDemandQuantity));
             if (string.IsNullOrWhiteSpace(phase))
                 throw new ArgumentException("An industry goal phase is required.", nameof(phase));
             if (lineId <= 0)
@@ -61,6 +64,7 @@ namespace Perpetuum.Services.Autonomous
             ResearchFacilityEid = researchFacilityEid;
             PrototypeFacilityEid = prototypeFacilityEid;
             RefineryFacilityEid = refineryFacilityEid;
+            CommittedDemandQuantity = committedDemandQuantity;
             Phase = phase;
             LineId = lineId;
             ProductionId = productionId;
@@ -76,6 +80,7 @@ namespace Perpetuum.Services.Autonomous
         public long ResearchFacilityEid { get; }
         public long PrototypeFacilityEid { get; }
         public long RefineryFacilityEid { get; }
+        public long CommittedDemandQuantity { get; }
         public string Phase { get; }
         public int? LineId { get; }
         public int? ProductionId { get; }
@@ -102,7 +107,28 @@ namespace Perpetuum.Services.Autonomous
                 blockedReason,
                 ResearchFacilityEid,
                 PrototypeFacilityEid,
-                RefineryFacilityEid);
+                RefineryFacilityEid,
+                CommittedDemandQuantity);
+        }
+
+        public AutonomousIndustryGoalState WithDemand(
+            long committedDemandQuantity,
+            string phase,
+            string blockedReason = null)
+        {
+            return new AutonomousIndustryGoalState(
+                CharacterId,
+                TargetDefinition,
+                TargetQuantity,
+                InitialInventoryQuantity,
+                MillFacilityEid,
+                phase,
+                procurement: Procurement,
+                blockedReason: blockedReason,
+                researchFacilityEid: ResearchFacilityEid,
+                prototypeFacilityEid: PrototypeFacilityEid,
+                refineryFacilityEid: RefineryFacilityEid,
+                committedDemandQuantity: committedDemandQuantity);
         }
     }
 
@@ -120,7 +146,7 @@ namespace Perpetuum.Services.Autonomous
                 .CommandText(@"select character_id, target_definition, target_quantity,
                                      initial_inventory_quantity, mill_facility_eid,
                                      research_facility_eid, prototype_facility_eid,
-                                     refinery_facility_eid, phase,
+                                     refinery_facility_eid, committed_demand_quantity, phase,
                                      line_id, production_id, procurement_json, blocked_reason
                               from dbo.ai_industry_goal
                               where character_id = @characterId")
@@ -141,7 +167,8 @@ namespace Perpetuum.Services.Autonomous
                     record.GetValue<string>("blocked_reason"),
                     record.GetValue<long>("research_facility_eid"),
                     record.GetValue<long>("prototype_facility_eid"),
-                    record.GetValue<long>("refinery_facility_eid"));
+                    record.GetValue<long>("refinery_facility_eid"),
+                    record.GetValue<long>("committed_demand_quantity"));
         }
 
         public void Save(AutonomousIndustryGoalState state)
@@ -160,6 +187,7 @@ namespace Perpetuum.Services.Autonomous
                                   research_facility_eid = @researchFacilityEid,
                                   prototype_facility_eid = @prototypeFacilityEid,
                                   refinery_facility_eid = @refineryFacilityEid,
+                                  committed_demand_quantity = @committedDemandQuantity,
                                   phase = @phase,
                                   line_id = @lineId,
                                   production_id = @productionId,
@@ -174,13 +202,13 @@ namespace Perpetuum.Services.Autonomous
                                        initial_inventory_quantity, mill_facility_eid, phase,
                                        line_id, production_id, procurement_json, blocked_reason,
                                        research_facility_eid, prototype_facility_eid,
-                                       refinery_facility_eid)
+                                       refinery_facility_eid, committed_demand_quantity)
                                   values
                                       (@characterId, @targetDefinition, @targetQuantity,
                                        @initialInventoryQuantity, @millFacilityEid, @phase,
                                        @lineId, @productionId, @procurementJson, @blockedReason,
                                        @researchFacilityEid, @prototypeFacilityEid,
-                                       @refineryFacilityEid);
+                                       @refineryFacilityEid, @committedDemandQuantity);
                               end;
                               commit transaction;")
                 .SetParameter("@characterId", state.CharacterId)
@@ -191,6 +219,7 @@ namespace Perpetuum.Services.Autonomous
                 .SetParameter("@researchFacilityEid", state.ResearchFacilityEid)
                 .SetParameter("@prototypeFacilityEid", state.PrototypeFacilityEid)
                 .SetParameter("@refineryFacilityEid", state.RefineryFacilityEid)
+                .SetParameter("@committedDemandQuantity", state.CommittedDemandQuantity)
                 .SetParameter("@phase", state.Phase)
                 .SetParameter("@lineId", state.LineId)
                 .SetParameter("@productionId", state.ProductionId)
