@@ -75,7 +75,10 @@ namespace Perpetuum.Services.Autonomous
         public AutonomousVisibleUnitSnapshot Nearest { get; }
         public bool HasThreat => Nearest != null;
 
-        public static AutonomousThreatAssessment From(AutonomousPerceptionSnapshot snapshot, double responseRange)
+        public static AutonomousThreatAssessment From(
+            AutonomousPerceptionSnapshot snapshot,
+            double responseRange,
+            long excludedEid = 0)
         {
             if (snapshot == null)
                 throw new ArgumentNullException(nameof(snapshot));
@@ -83,7 +86,7 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(responseRange));
 
             AutonomousVisibleUnitSnapshot[] threats = snapshot.VisibleUnits
-                .Where(unit => unit.Hostile && unit.Distance <= responseRange)
+                .Where(unit => unit.Eid != excludedEid && unit.Hostile && unit.Distance <= responseRange)
                 .ToArray();
             return new AutonomousThreatAssessment(threats, threats.FirstOrDefault());
         }

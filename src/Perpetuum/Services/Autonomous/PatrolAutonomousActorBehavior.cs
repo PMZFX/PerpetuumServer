@@ -24,6 +24,7 @@ namespace Perpetuum.Services.Autonomous
             WaitingForWorld,
             Outbound,
             FieldDwell,
+            CombatApproach,
             Returning,
             WaitingToDock,
             RouteRetry
@@ -42,6 +43,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IModuleActionService _moduleActionService;
         private readonly IAutonomousActorStateStore _actorStateStore;
         private readonly IAutonomousEquipmentRecoveryCoordinator _equipmentRecovery;
+        private readonly IAutonomousPveCombatController _pveCombat;
         private readonly IAutonomousActorAudit _audit;
         private AutonomousDefensiveEngagement _defense;
         private AutonomousRobotRecoveryTracker _recoveryTracker;
@@ -66,6 +68,7 @@ namespace Perpetuum.Services.Autonomous
             IModuleActionService moduleActionService,
             IAutonomousActorStateStore actorStateStore,
             IAutonomousEquipmentRecoveryCoordinator equipmentRecovery,
+            IAutonomousPveCombatController pveCombat,
             IAutonomousActorAudit audit)
         {
             _definition = definition ?? throw new ArgumentNullException(nameof(definition));
@@ -78,6 +81,7 @@ namespace Perpetuum.Services.Autonomous
             _moduleActionService = moduleActionService ?? throw new ArgumentNullException(nameof(moduleActionService));
             _actorStateStore = actorStateStore ?? throw new ArgumentNullException(nameof(actorStateStore));
             _equipmentRecovery = equipmentRecovery ?? throw new ArgumentNullException(nameof(equipmentRecovery));
+            _pveCombat = pveCombat ?? throw new ArgumentNullException(nameof(pveCombat));
             _audit = audit;
         }
 
@@ -111,6 +115,11 @@ namespace Perpetuum.Services.Autonomous
 
             if (recoveryDisposition == AutonomousRecoveryStartDisposition.RecoveryRequired)
             {
+                if (_definition.Patrol.Pve.Enabled &&
+                    string.Equals(_recoveryTracker.RecoveryReason,
+                        AutonomousRobotRecoveryReason.RobotDestroyed.ToString(),
+                        StringComparison.Ordinal))
+                    _pveCombat.RecordLoss(context, _definition.Patrol.Pve, _expectedRobotEid);
                 _audit.Write(context.Actor.Id, "patrol_recovery_required", AutonomousActorStatus.Active,
                     _recoveryTracker.RecoveryReason);
             }
@@ -123,6 +132,8 @@ namespace Perpetuum.Services.Autonomous
 
         public void Stop(GameActionContext context)
         {
+            if (_definition.Patrol.Pve.Enabled)
+                _pveCombat.Stop(context);
             Player player = context.Actor.GetPlayerRobotFromZone();
             if (player != null)
             {
@@ -154,6 +165,8 @@ namespace Perpetuum.Services.Autonomous
                         Name,
                         context.Actor.ActiveRobotEid))
                     return;
+                if (_definition.Patrol.Pve.Enabled)
+                    _pveCombat.AcknowledgeDockedPreparation(context);
                 _expectedRobotEid = _recoveryTracker.ExpectedRobotEid;
                 _robotRecoveryRequired = _recoveryTracker.RecoveryRequired;
                 _damageMonitor.Reset();
@@ -176,10 +189,28 @@ namespace Perpetuum.Services.Autonomous
             if (_definition.Patrol.Defense.Enabled)
             {
                 _damageMonitor.Bind(player);
-                HandleDefensiveCombat(context, player, elapsed);
+                if (!_definition.Patrol.Pve.Enabled)
+                    HandleDefensiveCombat(context, player, elapsed);
             }
 
-            if (HandleVisibleThreat(context, player))
+            if (_definition.Patrol.Pve.Enabled &&
+                (_state == PatrolState.FieldDwell || _state == PatrolState.CombatApproach))
+            {
+                AutonomousPveCombatUpdate combat = _pveCombat.Update(
+                    context,
+                    _definition.Patrol.Pve);
+                long combatTargetEid = combat.TargetEid > 0
+                    ? combat.TargetEid
+                    : _pveCombat.GetTargetEid(context.Actor.Id);
+                if (HandleVisibleThreat(context, player, combatTargetEid))
+                {
+                    _pveCombat.Stop(context);
+                    return;
+                }
+                if (HandlePveCombatUpdate(context, player, elapsed, combat))
+                    return;
+            }
+            else if (HandleVisibleThreat(context, player))
                 return;
 
             switch (_state)
@@ -202,6 +233,10 @@ namespace Perpetuum.Services.Autonomous
                 case PatrolState.FieldDwell:
                     if (_stateElapsed >= TimeSpan.FromSeconds(_definition.Patrol.FieldDwellSeconds))
                         BeginReturn(context, player);
+                    break;
+
+                case PatrolState.CombatApproach:
+                    SetState(PatrolState.FieldDwell);
                     break;
 
                 case PatrolState.Returning:
@@ -227,6 +262,9 @@ namespace Perpetuum.Services.Autonomous
         private void UpdateDocked(GameActionContext context)
         {
             if (_robotRecoveryRequired)
+                return;
+
+            if (_definition.Patrol.Pve.Enabled && !_pveCombat.ShouldDeploy(context.Actor.Id))
                 return;
 
             if (_state == PatrolState.WaitingForWorld && _stateElapsed < WorldLoadTimeout)
@@ -384,7 +422,7 @@ namespace Perpetuum.Services.Autonomous
             _audit.Write(context.Actor.Id, "patrol_dock", AutonomousActorStatus.Active);
         }
 
-        private bool HandleVisibleThreat(GameActionContext context, Player player)
+        private bool HandleVisibleThreat(GameActionContext context, Player player, long excludedEid = 0)
         {
             if (!_definition.Patrol.Threat.Enabled)
                 return false;
@@ -392,7 +430,8 @@ namespace Perpetuum.Services.Autonomous
             AutonomousPerceptionSnapshot snapshot = _perception.Observe(context);
             AutonomousThreatAssessment assessment = AutonomousThreatAssessment.From(
                 snapshot,
-                _definition.Patrol.Threat.ResponseRange);
+                _definition.Patrol.Threat.ResponseRange,
+                excludedEid);
             if (!assessment.HasThreat)
                 return false;
 
@@ -407,6 +446,67 @@ namespace Perpetuum.Services.Autonomous
                 assessment,
                 GetFieldActivity());
             return ApplyRetreatDirective(context, player, directive);
+        }
+
+        private bool HandlePveCombatUpdate(
+            GameActionContext context,
+            Player player,
+            TimeSpan elapsed,
+            AutonomousPveCombatUpdate update)
+        {
+            switch (update.Result)
+            {
+                case AutonomousPveCombatUpdateResult.Approach:
+                    if (!update.TargetPosition.HasValue)
+                    {
+                        BeginReturn(context, player);
+                        return true;
+                    }
+                    if (_state != PatrolState.CombatApproach)
+                    {
+                        if (!_navigation.TryStart(
+                                context,
+                                update.TargetPosition.Value,
+                                _definition.Patrol.Throttle))
+                        {
+                            _audit.Write(context.Actor.Id, "pve_approach_blocked",
+                                AutonomousActorStatus.Active, $"target_{update.TargetEid}");
+                            BeginReturn(context, player);
+                            return true;
+                        }
+                        SetState(PatrolState.CombatApproach);
+                        _audit.Write(context.Actor.Id, "pve_approach", AutonomousActorStatus.Active,
+                            $"target_{update.TargetEid}");
+                        return true;
+                    }
+
+                    AutonomousNavigationStatus status = _navigation.Update(context, elapsed);
+                    if (status == AutonomousNavigationStatus.Arrived ||
+                        status == AutonomousNavigationStatus.Blocked ||
+                        status == AutonomousNavigationStatus.Stuck)
+                    {
+                        _navigation.Stop(context);
+                        SetState(PatrolState.FieldDwell);
+                    }
+                    return true;
+
+                case AutonomousPveCombatUpdateResult.Retreat:
+                case AutonomousPveCombatUpdateResult.Resupply:
+                case AutonomousPveCombatUpdateResult.LossBudgetReached:
+                case AutonomousPveCombatUpdateResult.Complete:
+                case AutonomousPveCombatUpdateResult.Blocked:
+                    _navigation.Stop(context);
+                    BeginReturn(context, player);
+                    return true;
+
+                default:
+                    if (_state == PatrolState.CombatApproach)
+                    {
+                        _navigation.Stop(context);
+                        SetState(PatrolState.FieldDwell);
+                    }
+                    return true;
+            }
         }
 
         private void HandleDefensiveCombat(GameActionContext context, Player player, TimeSpan elapsed)
@@ -558,6 +658,10 @@ namespace Perpetuum.Services.Autonomous
             if (reason == AutonomousRobotRecoveryReason.None)
                 return false;
 
+            if (_definition.Patrol.Pve.Enabled &&
+                reason == AutonomousRobotRecoveryReason.RobotDestroyed)
+                _pveCombat.RecordLoss(context, _definition.Patrol.Pve, _expectedRobotEid);
+
             _damageMonitor.Reset();
             _defense?.Reset();
             _defenseLockOwned = false;
@@ -580,6 +684,7 @@ namespace Perpetuum.Services.Autonomous
                 case PatrolState.Outbound:
                     return AutonomousFieldActivity.TravellingOutbound;
                 case PatrolState.FieldDwell:
+                case PatrolState.CombatApproach:
                     return AutonomousFieldActivity.Dwelling;
                 case PatrolState.Returning:
                     return AutonomousFieldActivity.Returning;

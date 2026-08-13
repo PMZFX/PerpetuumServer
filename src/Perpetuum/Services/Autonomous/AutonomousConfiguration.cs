@@ -50,6 +50,15 @@ namespace Perpetuum.Services.Autonomous
                     if (actor.Patrol == null)
                         throw new InvalidOperationException($"Autonomous patrol options for character {actor.CharacterId} cannot be null.");
                     actor.Patrol.Validate(actor.CharacterId);
+                    if (actor.Patrol.Pve.Enabled)
+                    {
+                        if (actor.Equipment?.Enabled != true)
+                            throw new InvalidOperationException($"Autonomous PvE for character {actor.CharacterId} requires enabled equipment preparation.");
+                        if (actor.Equipment.Slots == null || actor.Equipment.Slots.Count == 0)
+                            throw new InvalidOperationException($"Autonomous PvE for character {actor.CharacterId} requires a configured combat fitting.");
+                        if (actor.Equipment.RepairBelowRatio <= actor.Patrol.Pve.RetreatArmorRatio)
+                            throw new InvalidOperationException($"Autonomous PvE repair threshold for character {actor.CharacterId} must exceed its armor retreat threshold.");
+                    }
                 }
 
                 if (string.Equals(actor.Behavior?.Trim(), "mining", StringComparison.OrdinalIgnoreCase))
@@ -600,6 +609,8 @@ namespace Perpetuum.Services.Autonomous
 
         public AutonomousDefenseOptions Defense { get; set; } = new AutonomousDefenseOptions();
 
+        public AutonomousPveOptions Pve { get; set; } = new AutonomousPveOptions();
+
         public void Validate(int characterId)
         {
             if (Radius < 4 || Radius > 48)
@@ -623,6 +634,70 @@ namespace Perpetuum.Services.Autonomous
                 throw new InvalidOperationException($"Autonomous defense options for character {characterId} cannot be null.");
 
             Defense.Validate(characterId);
+
+            if (Pve == null)
+                throw new InvalidOperationException($"Autonomous PvE options for character {characterId} cannot be null.");
+
+            Pve.Validate(characterId);
+        }
+    }
+
+    public sealed class AutonomousPveOptions
+    {
+        [DefaultValue(false), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public bool Enabled { get; set; }
+
+        [DefaultValue(75.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double AcquisitionRange { get; set; } = 75.0;
+
+        [DefaultValue(45.0), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double EngagementRange { get; set; } = 45.0;
+
+        [DefaultValue(30), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int SearchSeconds { get; set; } = 30;
+
+        [DefaultValue(8), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int LockTimeoutSeconds { get; set; } = 8;
+
+        [DefaultValue(90), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxEngagementSeconds { get; set; } = 90;
+
+        [DefaultValue(0.45), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double RetreatArmorRatio { get; set; } = 0.45;
+
+        [DefaultValue(0.15), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public double RetreatCoreRatio { get; set; } = 0.15;
+
+        [DefaultValue(1), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int TargetCount { get; set; } = 1;
+
+        [DefaultValue(1), JsonProperty(DefaultValueHandling = DefaultValueHandling.Populate)]
+        public int MaxLosses { get; set; } = 1;
+
+        public void Validate(int characterId)
+        {
+            if (double.IsNaN(AcquisitionRange) || double.IsInfinity(AcquisitionRange) ||
+                AcquisitionRange < 1 || AcquisitionRange > 200)
+                throw new InvalidOperationException($"Autonomous PvE acquisition range for character {characterId} must be between 1 and 200.");
+            if (double.IsNaN(EngagementRange) || double.IsInfinity(EngagementRange) ||
+                EngagementRange < 1 || EngagementRange > AcquisitionRange)
+                throw new InvalidOperationException($"Autonomous PvE engagement range for character {characterId} must be positive and no greater than acquisition range.");
+            if (SearchSeconds < 1 || SearchSeconds > 3600)
+                throw new InvalidOperationException($"Autonomous PvE search time for character {characterId} must be between 1 and 3600 seconds.");
+            if (LockTimeoutSeconds < 1 || LockTimeoutSeconds > 60)
+                throw new InvalidOperationException($"Autonomous PvE lock timeout for character {characterId} must be between 1 and 60 seconds.");
+            if (MaxEngagementSeconds <= LockTimeoutSeconds || MaxEngagementSeconds > 1800)
+                throw new InvalidOperationException($"Autonomous PvE engagement limit for character {characterId} must exceed its lock timeout and be at most 1800 seconds.");
+            if (double.IsNaN(RetreatArmorRatio) || double.IsInfinity(RetreatArmorRatio) ||
+                RetreatArmorRatio <= 0 || RetreatArmorRatio >= 1)
+                throw new InvalidOperationException($"Autonomous PvE armor retreat ratio for character {characterId} must be between zero and one.");
+            if (double.IsNaN(RetreatCoreRatio) || double.IsInfinity(RetreatCoreRatio) ||
+                RetreatCoreRatio <= 0 || RetreatCoreRatio >= 1)
+                throw new InvalidOperationException($"Autonomous PvE core retreat ratio for character {characterId} must be between zero and one.");
+            if (TargetCount < 1 || TargetCount > 1000)
+                throw new InvalidOperationException($"Autonomous PvE target count for character {characterId} must be between 1 and 1000.");
+            if (MaxLosses < 1 || MaxLosses > 100)
+                throw new InvalidOperationException($"Autonomous PvE loss budget for character {characterId} must be between 1 and 100.");
         }
     }
 

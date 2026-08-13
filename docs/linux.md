@@ -560,6 +560,74 @@ lost or the limit expires, then waits for normal aggression and docking rules.
 This feature does not choose targets proactively, create ammunition, repair the
 robot, or replace a destroyed robot.
 
+Proactive PvE is separately opt-in through `Patrol.Pve.Enabled` and requires an
+enabled Milestone A `Equipment` loadout. Apply
+`database/overlays/011_ai_combat_goal.sql` before enabling it. The controller
+selects only living hostile NPCs in the controlled player's real visible-unit
+set; player characters are never valid proactive targets. It approaches the
+last visible position through normal movement input, requests the normal
+asynchronous lock, selects that lock as primary, and activates only fitted
+weapons with usable ammunition through the shared module action. A previously
+loaded empty weapon may request a normal cargo reload. If that fails or no
+compatible ammunition remains, the actor returns and stays docked until the
+configured equipment controller has reloaded or legitimately procured the
+loadout.
+
+Armor and core retreat ratios, visible acquisition and engagement ranges,
+search and lock timeouts, the total engagement limit, target count, and loss
+budget are all explicit bounds. A second in-range hostile is still handled by
+the conservative threat policy; only the selected NPC is excluded from that
+assessment. Repair uses the ordinary facility quote/execute path and the
+configured repair threshold must exceed the combat retreat threshold. A robot
+death is counted once by lost robot EID, then the existing durable equipment
+recovery path must prove a legitimate ready replacement. Reaching the loss
+budget or configured target count prevents another deployment.
+
+The persistent row records intent and observations only. A restart re-observes
+visibility, target life, locks, weapons, ammunition, armor, and core before any
+action; it cannot materialize a target, award loot or progression, or prove a
+mission kill. The alpha counts an engagement completion only after the selected
+target is observed dead following weapon engagement. Ordinary game rewards and
+mission credit remain authoritative.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "patrol",
+  "Patrol": {
+    "Radius": 20,
+    "Throttle": 0.45,
+    "Pve": {
+      "Enabled": true,
+      "AcquisitionRange": 75.0,
+      "EngagementRange": 45.0,
+      "SearchSeconds": 30,
+      "LockTimeoutSeconds": 8,
+      "MaxEngagementSeconds": 90,
+      "RetreatArmorRatio": 0.45,
+      "RetreatCoreRatio": 0.15,
+      "TargetCount": 1,
+      "MaxLosses": 1
+    }
+  },
+  "Equipment": {
+    "Enabled": true,
+    "Robot": "def_name_here",
+    "RepairFacilityEid": 123456,
+    "RepairBelowRatio": 0.95,
+    "Slots": [
+      {
+        "Module": "weapon_def_name_here",
+        "Ammo": "ammo_def_name_here",
+        "Component": "Head",
+        "Slot": 0
+      }
+    ]
+  }
+}
+```
+
 The first economic field behavior is opt-in as `mining`. It currently covers
 deploy, scan, travel, lock, drill, return, and dock. The active robot must
 already have a tile geoscanner and mining turret fitted with loaded ammunition
