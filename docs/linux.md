@@ -383,6 +383,10 @@ optional closed-economy sales policy.
       "MaximumUnitPrice": 25.0,
       "WalletReserve": 10000.0
     },
+    "SupplyDemand": {
+      "Enabled": false,
+      "RequestLifetimeMinutes": 60
+    },
     "Sales": {
       "Enabled": false,
       "MinimumUnitPrice": 5.0,
@@ -436,6 +440,23 @@ quote recalculates what is still missing before another purchase. No offer,
 insufficient spendable credit, restricted corporation orders, and market races
 become ordinary wait states rather than grants or retries outside the normal
 market transaction.
+
+Cross-character supply demand is separately opt-in through `SupplyDemand` and
+requires ordinary bounded `Procurement`. Apply
+`database/overlays/015_ai_supply_coordination.sql` before enabling it. Whenever
+a fresh planner or character-specific quote observes missing inputs, the
+manufacturer publishes only the definition, quantity, current public-market
+base, goal identity, and expiry. Requests and supplier reservations are
+strategic coordination records: they do not move an item, reserve inventory,
+expose remote market books, debit a wallet, or authorize gameplay.
+
+An explicitly opted-in miner at that same public market may reserve at most
+`MaximumReservationQuantity` of a request matching its configured material.
+After returning with real ore, it lists the bounded stack through the audited
+`marketCreateSellOrder` service used by clients. Listing and the durable
+`Listed` checkpoint share one transaction. The manufacturer re-quotes its
+actual need and buys only through normal local procurement; coordination never
+forces a trade or grants favorable pricing.
 
 Changing `TargetDefinition`, `Quantity`, or a configured production facility
 does not overwrite an existing durable goal. The controller enters
@@ -792,6 +813,11 @@ for the configured material.
       "OrderDurationHours": 24,
       "RetrySeconds": 60
     },
+    "SupplyFulfillment": {
+      "Enabled": false,
+      "MaximumReservationQuantity": 500,
+      "ReservationLifetimeMinutes": 120
+    },
     "Threat": {
       "Enabled": true,
       "ResponseRange": 35.0,
@@ -869,6 +895,14 @@ history it lists at that minimum. Normal order slots, listing fees, wallet
 balance, item ownership, saleability, and market availability all apply. A
 rejected sale is audited as `mining_market_blocked` and retried after
 `RetrySeconds`; ore is never discarded and credits are never granted directly.
+
+`SupplyFulfillment` optionally prioritizes an explicitly published
+manufacturer request before general sales. It requires ordinary market sales
+and matches only the configured material at the miner's current docking base.
+A reservation with no cargo sends the miner back through its normal field
+loop. A listed reservation waits on the seller's real market order and survives
+restart; expiry releases strategic intent without deleting, relocating, or
+refunding any ordinary market asset.
 
 Docked resupply is separately controlled by `Resupply`. Before undocking, the
 miner examines only the fitted modules and ammunition already in its active

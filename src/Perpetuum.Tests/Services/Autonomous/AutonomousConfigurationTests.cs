@@ -662,5 +662,36 @@ namespace Perpetuum.Tests.Services.Autonomous
             };
             Assert.Throws<InvalidOperationException>(() => options.Validate(31));
         }
+
+        [Fact]
+        public void ManufacturerSupplyDemandRequiresOrdinaryMarketProcurement()
+        {
+            var options = new AutonomousManufacturerOptions
+            {
+                TargetDefinition = 100,
+                MillFacilityEid = 200,
+                SupplyDemand = new AutonomousSupplyDemandOptions {Enabled = true}
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(31));
+
+            options.Procurement.Enabled = true;
+            options.Procurement.MaximumUnitPrice = 50;
+            options.Validate(31);
+        }
+
+        [Fact]
+        public void MiningSupplyFulfillmentRequiresOrdinaryMarketSales()
+        {
+            var options = new AutonomousMiningOptions
+            {
+                SupplyFulfillment = new AutonomousSupplyFulfillmentOptions {Enabled = true}
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(31));
+
+            options.Market.Enabled = true;
+            options.Validate(31);
+        }
     }
 }

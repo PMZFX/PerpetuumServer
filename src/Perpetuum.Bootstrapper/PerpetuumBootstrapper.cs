@@ -1700,6 +1700,13 @@ namespace Perpetuum.Bootstrapper
                 .As<IAutonomousTradeExecutionService>();
             _ = _builder.RegisterType<AutonomousCargoDispositionService>()
                 .As<IAutonomousCargoDispositionService>();
+            _ = _builder.RegisterType<DatabaseAutonomousSupplyRequestStore>()
+                .As<IAutonomousSupplyRequestStore>()
+                .SingleInstance();
+            _ = _builder.RegisterType<AutonomousSupplyCoordinator>()
+                .As<IAutonomousSupplyCoordinator>();
+            _ = _builder.RegisterType<AutonomousSupplyFulfillmentService>()
+                .As<IAutonomousSupplyFulfillmentService>();
             _ = _builder.RegisterType<AutonomousMiningProcurementService>()
                 .As<IAutonomousMiningProcurementService>();
             _ = _builder.RegisterType<AutonomousIndustryProcurementService>()

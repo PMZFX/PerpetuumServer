@@ -199,6 +199,7 @@ namespace Perpetuum.Services.Autonomous
         private readonly IProductionRefineActionService _refine;
         private readonly IProductionMassProductionActionService _massProduction;
         private readonly IAutonomousIndustryProcurementService _procurement;
+        private readonly IAutonomousSupplyCoordinator _supply;
         private readonly IAutonomousMarketObservationService _market;
         private readonly IAutonomousManufacturedOutputService _output;
         private readonly IAutonomousIndustryGoalStore _goals;
@@ -213,6 +214,7 @@ namespace Perpetuum.Services.Autonomous
             IProductionRefineActionService refine,
             IProductionMassProductionActionService massProduction,
             IAutonomousIndustryProcurementService procurement,
+            IAutonomousSupplyCoordinator supply,
             IAutonomousMarketObservationService market,
             IAutonomousManufacturedOutputService output,
             IAutonomousIndustryGoalStore goals,
@@ -226,6 +228,7 @@ namespace Perpetuum.Services.Autonomous
             _refine = refine ?? throw new ArgumentNullException(nameof(refine));
             _massProduction = massProduction ?? throw new ArgumentNullException(nameof(massProduction));
             _procurement = procurement ?? throw new ArgumentNullException(nameof(procurement));
+            _supply = supply ?? throw new ArgumentNullException(nameof(supply));
             _market = market ?? throw new ArgumentNullException(nameof(market));
             _output = output ?? throw new ArgumentNullException(nameof(output));
             _goals = goals ?? throw new ArgumentNullException(nameof(goals));
@@ -776,6 +779,13 @@ namespace Perpetuum.Services.Autonomous
                 procurement: requirements,
                 blockedReason: blockedReason);
             WriteState(waiting);
+            _supply.PublishDemand(
+                context.Actor.Id,
+                state.TargetDefinition,
+                context.Actor.CurrentDockingBaseEid,
+                requirements,
+                options.SupplyDemand,
+                DateTime.UtcNow);
             if (!options.Procurement.Enabled)
                 return;
 
