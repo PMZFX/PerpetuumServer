@@ -149,15 +149,25 @@ the character's existing running production before acting. A matching running
 job wins over starting another one, so a restart between production commit and
 goal-state persistence cannot duplicate work.
 
-The first loop intentionally uses an existing usable calibration line. It
-obtains a fresh character-specific mass-production quote, compares the quoted
-effective requirements with the real public-container inventory, and starts
-one normal production cycle through the shared action. Missing materials,
-calibration, docking/facility access, money, or another gameplay rejection are
-persisted wait states; no item, credit, line, unlock, or completion is granted.
-The strategic recursive planner may supply procurement leaves when a line is
-missing, but it never authorizes execution. Apply
-`database/overlays/006_ai_industry_goal.sql` before enabling the behavior.
+The controller can use a character-owned calibration program to create its
+line. When research and prototype facilities are configured, it can first
+produce the required prototype from quoted components, then consume that
+prototype and a matching character-owned research kit to create the program.
+It recognizes matching prototype, research, and mass-production jobs before
+acting, so a restart between an action commit and goal-state persistence cannot
+duplicate work. Prototype, research, calibration, and mass production are each
+quoted immediately before execution through their shared gameplay action
+service.
+
+The resulting line is used for one normal mass-production cycle at a time.
+The controller compares the fresh character-specific quote with real public-
+container inventory. Missing research inputs, calibration programs, materials,
+docking/facility access, slots, money, or another gameplay rejection become
+persisted wait states and procurement goals; no item, credit, line, research
+point, unlock, or completion is granted. The strategic recursive planner may
+supply procurement leaves, but it never authorizes execution. Apply
+`database/overlays/006_ai_industry_goal.sql` and
+`database/overlays/007_ai_industry_lifecycle.sql` before enabling the behavior.
 
 ```json
 {
@@ -168,11 +178,22 @@ missing, but it never authorizes execution. Apply
     "TargetDefinition": 100,
     "Quantity": 1,
     "MillFacilityEid": 456,
+    "ResearchFacilityEid": 457,
+    "PrototypeFacilityEid": 458,
     "UseCorporationWallet": false,
     "RetrySeconds": 30
   }
 }
 ```
+
+`ResearchFacilityEid` and `PrototypeFacilityEid` are optional and default to
+zero. With no research facility, the controller waits for a calibration
+program acquired through the normal economy. With no prototyper, it waits for
+the required prototype or item. Configured facilities must be accessible from
+the character's current docking base. The ordinary action services enforce
+that relationship, tech-tree unlocks, slots, materials, wallets, time, and all
+other character-specific production rules. A missing unlock is a wait state;
+the controller never spends or grants research points.
 
 Changing those goal fields does not overwrite an existing durable goal. The
 controller enters `BlockedConfiguration` until the old goal is deliberately

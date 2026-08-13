@@ -18,7 +18,9 @@ namespace Perpetuum.Services.Autonomous
             int? lineId = null,
             int? productionId = null,
             IReadOnlyDictionary<int, long> procurement = null,
-            string blockedReason = null)
+            string blockedReason = null,
+            long researchFacilityEid = 0,
+            long prototypeFacilityEid = 0)
         {
             if (characterId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(characterId));
@@ -30,6 +32,10 @@ namespace Perpetuum.Services.Autonomous
                 throw new ArgumentOutOfRangeException(nameof(initialInventoryQuantity));
             if (millFacilityEid <= 0)
                 throw new ArgumentOutOfRangeException(nameof(millFacilityEid));
+            if (researchFacilityEid < 0)
+                throw new ArgumentOutOfRangeException(nameof(researchFacilityEid));
+            if (prototypeFacilityEid < 0)
+                throw new ArgumentOutOfRangeException(nameof(prototypeFacilityEid));
             if (string.IsNullOrWhiteSpace(phase))
                 throw new ArgumentException("An industry goal phase is required.", nameof(phase));
             if (lineId <= 0)
@@ -49,6 +55,8 @@ namespace Perpetuum.Services.Autonomous
             TargetQuantity = targetQuantity;
             InitialInventoryQuantity = initialInventoryQuantity;
             MillFacilityEid = millFacilityEid;
+            ResearchFacilityEid = researchFacilityEid;
+            PrototypeFacilityEid = prototypeFacilityEid;
             Phase = phase;
             LineId = lineId;
             ProductionId = productionId;
@@ -61,6 +69,8 @@ namespace Perpetuum.Services.Autonomous
         public long TargetQuantity { get; }
         public long InitialInventoryQuantity { get; }
         public long MillFacilityEid { get; }
+        public long ResearchFacilityEid { get; }
+        public long PrototypeFacilityEid { get; }
         public string Phase { get; }
         public int? LineId { get; }
         public int? ProductionId { get; }
@@ -84,7 +94,9 @@ namespace Perpetuum.Services.Autonomous
                 lineId,
                 productionId,
                 procurement,
-                blockedReason);
+                blockedReason,
+                ResearchFacilityEid,
+                PrototypeFacilityEid);
         }
     }
 
@@ -100,7 +112,8 @@ namespace Perpetuum.Services.Autonomous
         {
             var record = Db.Query()
                 .CommandText(@"select character_id, target_definition, target_quantity,
-                                     initial_inventory_quantity, mill_facility_eid, phase,
+                                     initial_inventory_quantity, mill_facility_eid,
+                                     research_facility_eid, prototype_facility_eid, phase,
                                      line_id, production_id, procurement_json, blocked_reason
                               from dbo.ai_industry_goal
                               where character_id = @characterId")
@@ -118,7 +131,9 @@ namespace Perpetuum.Services.Autonomous
                     record.GetValue<int?>("line_id"),
                     record.GetValue<int?>("production_id"),
                     AutonomousIndustryProcurementCodec.Deserialize(record.GetValue<string>("procurement_json")),
-                    record.GetValue<string>("blocked_reason"));
+                    record.GetValue<string>("blocked_reason"),
+                    record.GetValue<long>("research_facility_eid"),
+                    record.GetValue<long>("prototype_facility_eid"));
         }
 
         public void Save(AutonomousIndustryGoalState state)
@@ -134,6 +149,8 @@ namespace Perpetuum.Services.Autonomous
                                   target_quantity = @targetQuantity,
                                   initial_inventory_quantity = @initialInventoryQuantity,
                                   mill_facility_eid = @millFacilityEid,
+                                  research_facility_eid = @researchFacilityEid,
+                                  prototype_facility_eid = @prototypeFacilityEid,
                                   phase = @phase,
                                   line_id = @lineId,
                                   production_id = @productionId,
@@ -146,11 +163,13 @@ namespace Perpetuum.Services.Autonomous
                                   insert dbo.ai_industry_goal
                                       (character_id, target_definition, target_quantity,
                                        initial_inventory_quantity, mill_facility_eid, phase,
-                                       line_id, production_id, procurement_json, blocked_reason)
+                                       line_id, production_id, procurement_json, blocked_reason,
+                                       research_facility_eid, prototype_facility_eid)
                                   values
                                       (@characterId, @targetDefinition, @targetQuantity,
                                        @initialInventoryQuantity, @millFacilityEid, @phase,
-                                       @lineId, @productionId, @procurementJson, @blockedReason);
+                                       @lineId, @productionId, @procurementJson, @blockedReason,
+                                       @researchFacilityEid, @prototypeFacilityEid);
                               end;
                               commit transaction;")
                 .SetParameter("@characterId", state.CharacterId)
@@ -158,6 +177,8 @@ namespace Perpetuum.Services.Autonomous
                 .SetParameter("@targetQuantity", state.TargetQuantity)
                 .SetParameter("@initialInventoryQuantity", state.InitialInventoryQuantity)
                 .SetParameter("@millFacilityEid", state.MillFacilityEid)
+                .SetParameter("@researchFacilityEid", state.ResearchFacilityEid)
+                .SetParameter("@prototypeFacilityEid", state.PrototypeFacilityEid)
                 .SetParameter("@phase", state.Phase)
                 .SetParameter("@lineId", state.LineId)
                 .SetParameter("@productionId", state.ProductionId)
