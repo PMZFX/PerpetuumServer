@@ -26,7 +26,12 @@ namespace Perpetuum.Containers
 
         public double Capacity
         {
-            get { return ED.Options.Capacity; }
+            get
+            {
+                double configuredCapacity = ED.Options.Capacity;
+                double capacityOverride = DynamicProperties.GetOrDefault<double>(k.capacityOverride);
+                return Math.Max(configuredCapacity, capacityOverride);
+            }
         }
 
         public double Load

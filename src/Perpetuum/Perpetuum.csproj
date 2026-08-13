@@ -25,6 +25,10 @@
     <ProjectReference Include="../Perpetuum.ExportedTypes/Perpetuum.ExportedTypes.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Services/Mentoring/Knowledge/Documents/*.mentor.md" />
+  </ItemGroup>
+
   <!-- These files existed at P31 but were intentionally outside its project. -->
   <ItemGroup>
     <Compile Remove="Zones/Effects/ZoneEffects/IZoneEffectRepository.cs" />

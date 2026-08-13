@@ -20,6 +20,12 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
         private readonly IStandingHandler _standingHandler;
         public MissionAdministrator MissionAdministrator { get; }
 
+        /// <summary>
+        /// Raised only after mission progress has committed. Presentation-layer listeners must
+        /// not mutate the mission represented by the event.
+        /// </summary>
+        public event Action<MissionProgressEvent> MissionProgressed;
+
         public MissionProcessor(MissionDataCache missionDataCache,MissionAdministrator.Factory missionAdministratorFactory,IStandingHandler standingHandler)
         {
             MissionAdministrator = missionAdministratorFactory(this);
@@ -72,6 +78,25 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
                 .WithData(RunningMissionList(character))
                 .ToCharacter(character)
                 .Send();
+        }
+
+        private void PublishMissionProgress(MissionProgressEvent progress)
+        {
+            Action<MissionProgressEvent> handlers = MissionProgressed;
+            if (handlers == null)
+                return;
+
+            foreach (Action<MissionProgressEvent> handler in handlers.GetInvocationList())
+            {
+                try
+                {
+                    handler(progress);
+                }
+                catch (Exception exception)
+                {
+                    Logger.Exception(exception);
+                }
+            }
         }
 
         public void ServerAddsParticipant(Guid guid,Character doerCharacter)

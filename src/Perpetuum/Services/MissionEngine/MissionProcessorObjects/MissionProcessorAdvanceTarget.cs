@@ -429,6 +429,15 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
 
             var rewarditems = TryFinishMission(missionInProgress);
 
+            var progressEvent = new MissionProgressEvent(
+                character.Id,
+                missionInProgress.MissionId,
+                missionInProgress.missionGuid,
+                missionInProgress.myMission.Name,
+                missionTargetInProgress.TargetType,
+                missionTargetInProgress.completed,
+                missionInProgress.IsMissionFinished);
+
             Logger.Info("mission advanced! characterID:" + character.Id + " missionID:" + missionInProgress.MissionId + " targetId:" + missionTargetInProgress.MissionTargetId + " completed:" + missionTargetInProgress.completed);
 
             Transaction.Current.OnCommited(() =>
@@ -437,7 +446,8 @@ namespace Perpetuum.Services.MissionEngine.MissionProcessorObjects
                 missionTargetInProgress.PrepareInfoDictionary(statusInfo);
 
                 missionTargetInProgress.SendTargetStatusToGangAsync(gangResultCommand, statusInfo);
-               
+
+                PublishMissionProgress(progressEvent);
             });
 
             return rewarditems;

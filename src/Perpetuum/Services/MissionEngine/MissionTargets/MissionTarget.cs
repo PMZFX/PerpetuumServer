@@ -405,6 +405,12 @@ namespace Perpetuum.Services.MissionEngine.MissionTargets
             ResetMyDictionary();
         }
 
+        /// <summary>
+        /// Localization key for the player-facing objective instruction. Consumers should resolve
+        /// it through the server custom dictionary instead of treating the key as display text.
+        /// </summary>
+        public string DescriptionToken => _description;
+
        
 
 

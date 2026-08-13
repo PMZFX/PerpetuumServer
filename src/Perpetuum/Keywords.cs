@@ -126,6 +126,7 @@ namespace Perpetuum
         public const string calendarId = "calendarId";
         public const string calibrationProgram = "calibrationProgram";
         public const string capacity = "capacity";
+        public const string capacityOverride = "capacityOverride";
         public const string category = "category";
         public const string categoryFlags = "categoryflags";
         public const string CEO = "CEO";

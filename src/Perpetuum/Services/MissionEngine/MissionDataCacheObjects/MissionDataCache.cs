@@ -339,6 +339,13 @@ namespace Perpetuum.Services.MissionEngine.MissionDataCacheObjects
             return _missions.TryGetValue(id, out mission);
         }
 
+        public bool GetMissionByName(string name, out Mission mission)
+        {
+            mission = _missions.Values.FirstOrDefault(candidate =>
+                string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+            return mission != null;
+        }
+
         public Mission GetMissionById(int id)
         {
             return _missions.GetOrDefault(id);

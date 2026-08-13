@@ -28,6 +28,7 @@ namespace Perpetuum.Services.MissionEngine.Missions
         internal long issuerCorporationEid; //fluff, tm_ss,tm_ii,ics_ww ... stb
         internal long issuerAllianceEid; //standing match VS level - config only
         public readonly bool isUnique;
+        public string Name { get; }
         private readonly int? _missionIdOnSuccess;
         public bool isTriggered; //if this mission is participating as a fail or success mission
         private readonly int? _periodMinutes; //daily mission appereance 
@@ -59,6 +60,7 @@ namespace Perpetuum.Services.MissionEngine.Missions
         protected Mission(IDataRecord record)
         {
             id = record.GetValue<int>(k.ID.ToLower());
+            Name = record.GetValue<string>(k.name);
             _missionIdOnSuccess = record.GetValue<int?>(k.missionIDOnSuccess.ToLower());
             isUnique = record.GetValue<bool>(k.isUnique.ToLower());
             _periodMinutes = record.GetValue<int?>(k.periodMinutes.ToLower());

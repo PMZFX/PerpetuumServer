@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using System.Transactions;
 using Perpetuum.Accounting;
 using Perpetuum.Accounting.Characters;
@@ -12,8 +11,9 @@ using Perpetuum.GenXY;
 using Perpetuum.Groups.Corporations;
 using Perpetuum.Host.Requests;
 using Perpetuum.Services.Channels;
-using Perpetuum.Services.Mail;
+using Perpetuum.Services.Onboarding;
 using Perpetuum.Services.Sparks;
+using Perpetuum.Robots;
 using Perpetuum.Units.DockingBases;
 using Perpetuum.Zones.Training;
 
@@ -22,17 +22,17 @@ namespace Perpetuum.RequestHandlers.Characters
     public class CharacterCreate : IRequestHandler
     {
         private readonly int ACCOUNT_START_EP;
-        private TimeSpan WAIT_TIME_BEFORE_SENDING_MAIL = TimeSpan.FromSeconds(10);
-        private TimeSpan WAIT_TIME_BEFORE_SENDING_WELCOME_MESSAGE = TimeSpan.FromSeconds(10);
-
         private readonly IAccountManager _accountManager;
         private readonly IChannelManager _channelManager;
         private readonly DockingBaseHelper _dockingBaseHelper;
         private readonly CharacterFactory _characterFactory;
         private readonly IEntityServices _entityServices;
         private readonly SparkHelper _sparkHelper;
+        private readonly IFieldCertificationEnrollment _fieldCertificationEnrollment;
+        private readonly IFieldCertificationStarterLoadout _fieldCertificationStarterLoadout;
+        private readonly OnboardingClientCompatibility _onboardingCompatibility;
 
-        public CharacterCreate(IAccountManager accountManager,IChannelManager channelManager,DockingBaseHelper dockingBaseHelper,CharacterFactory characterFactory,IEntityServices entityServices,SparkHelper sparkHelper,GlobalConfiguration globalConfiguration)
+        public CharacterCreate(IAccountManager accountManager,IChannelManager channelManager,DockingBaseHelper dockingBaseHelper,CharacterFactory characterFactory,IEntityServices entityServices,SparkHelper sparkHelper,IFieldCertificationEnrollment fieldCertificationEnrollment,IFieldCertificationStarterLoadout fieldCertificationStarterLoadout,OnboardingClientCompatibility onboardingCompatibility,GlobalConfiguration globalConfiguration)
         {
             _accountManager = accountManager;
             _channelManager = channelManager;
@@ -40,6 +40,9 @@ namespace Perpetuum.RequestHandlers.Characters
             _characterFactory = characterFactory;
             _entityServices = entityServices;
             _sparkHelper = sparkHelper;
+            _fieldCertificationEnrollment = fieldCertificationEnrollment;
+            _fieldCertificationStarterLoadout = fieldCertificationStarterLoadout;
+            _onboardingCompatibility = onboardingCompatibility;
             // Using EP for new player from globalConfiguration.
             ACCOUNT_START_EP = globalConfiguration.StartEP;
         }
@@ -60,11 +63,6 @@ namespace Perpetuum.RequestHandlers.Characters
                     throw new PerpetuumException(ErrorCodes.AccountNotFound);
 
                 Character.CheckNickAndThrowIfFailed(nick, request.Session.AccessLevel, account);
-
-                //only 3 characters per account is allowed
-                var activeCharactersCount = _accountManager.GetActiveCharactersCount(account);
-                if (activeCharactersCount >= 3)
-                    throw new PerpetuumException(ErrorCodes.MaximumAmountOfCharactersReached);
 
                 if (account.FirstCharacterDate == null)
                 {
@@ -109,16 +107,11 @@ namespace Perpetuum.RequestHandlers.Characters
                     dockingBase = _dockingBaseHelper.GetTrainingDockingBase();
                     corporation = ((TrainingDockingBase)dockingBase).GetTrainingCorporation();
                     character.SetAllExtensionLevel(6);
-                    dockingBase.CreateStarterRobotForCharacter(character);
+                    Robot starterRobot = dockingBase.CreateStarterRobotForCharacter(character, true);
+                    _fieldCertificationStarterLoadout.EnsureMissionCargoCapacity(character, starterRobot);
+                    _onboardingCompatibility.Initialize(character);
                     character.AddToWallet(TransactionType.CharacterCreate,10000000);
 
-                    Task.Delay(WAIT_TIME_BEFORE_SENDING_MAIL)
-                        .ContinueWith(task => MailHandler.SendWelcomeMailBeginTutorial(character));
-                    Task.Delay(WAIT_TIME_BEFORE_SENDING_WELCOME_MESSAGE)
-                    .ContinueWith(task =>
-                    {
-                        ChannelMessageHandler.SendNewPlayerTutorialMessage(_channelManager, character.Nick);
-                    });
                 }
 
                 character.CurrentDockingBaseEid = dockingBase.Eid;
@@ -133,6 +126,8 @@ namespace Perpetuum.RequestHandlers.Characters
                 {
                     _channelManager.JoinChannel(corporation.ChannelName, character);
                     Message.Builder.FromRequest(request).SetData(k.characterID,character.Id).Send();
+                    if (schoolID == 0)
+                        _fieldCertificationEnrollment.Schedule(character, dockingBase.Eid);
                 });
                 
                 scope.Complete();

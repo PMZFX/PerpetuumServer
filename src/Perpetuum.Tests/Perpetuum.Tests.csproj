@@ -19,4 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="../Perpetuum/Perpetuum.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Services/Mentoring/Data/*.mentor-eval.tsv" />
+  </ItemGroup>
 </Project>

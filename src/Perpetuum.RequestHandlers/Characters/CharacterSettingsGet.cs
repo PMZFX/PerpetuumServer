@@ -1,20 +1,22 @@
 using System.Collections.Generic;
-using Perpetuum.Data;
-using Perpetuum.GenXY;
 using Perpetuum.Host.Requests;
+using Perpetuum.Services.Onboarding;
 
 namespace Perpetuum.RequestHandlers.Characters
 {
     public class CharacterSettingsGet : IRequestHandler
     {
+        private readonly OnboardingClientCompatibility _onboardingCompatibility;
+
+        public CharacterSettingsGet(OnboardingClientCompatibility onboardingCompatibility)
+        {
+            _onboardingCompatibility = onboardingCompatibility;
+        }
+
         public void HandleRequest(IRequest request)
         {
             var character = request.Session.Character;
-            var dataStr = Db.Query().CommandText("select settingsstring from charactersettings where characterid=@characterID")
-                .SetParameter("@characterID", character.Id)
-                .ExecuteScalar<string>();
-
-            var result = GenxyConverter.Deserialize(dataStr);
+            var result = _onboardingCompatibility.LoadSettings(character);
 
             if (result.Count == 0)
             {

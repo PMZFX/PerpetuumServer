@@ -284,8 +284,22 @@ namespace Perpetuum.Services.MissionEngine.MissionTargets
         {
             var npc = e.LockedNpc;
 
-            if (MyZoneMissionInProgress.missionGuid != npc.GetMissionGuid())
-                return false;
+            Guid npcMissionGuid = npc.GetMissionGuid();
+            if (MyZoneMissionInProgress.missionGuid != npcMissionGuid)
+            {
+                // Quantity-only targets refer to dynamically spawned mission NPCs and must keep
+                // strict GUID ownership. Configured targets may deliberately point at persistent
+                // world NPCs by definition and position, just like configured kill targets do.
+                if (MyTarget.useQuantityOnly ||
+                    !IsConfiguredNpcMatch(
+                        MyTarget.ValidDefinitionSet,
+                        MyTarget.Definition,
+                        npc.Definition,
+                        IsZoneOrPositionValid(e.LockedPosition.ToPosition())))
+                {
+                    return false;
+                }
+            }
 
             if (_lockedUnits.Contains(npc.Eid))
             {
@@ -297,6 +311,17 @@ namespace Perpetuum.Services.MissionEngine.MissionTargets
             Log("marked npc was locked " + this);
 
             return true;
+        }
+
+        public static bool IsConfiguredNpcMatch(
+            bool hasDefinition,
+            int targetDefinition,
+            int npcDefinition,
+            bool positionMatches)
+        {
+            return hasDefinition &&
+                   targetDefinition == npcDefinition &&
+                   positionMatches;
         }
 
         protected override void OnHandleMissionEvent(LockUnitEventInfo e)

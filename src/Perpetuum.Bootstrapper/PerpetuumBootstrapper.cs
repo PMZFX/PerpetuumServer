@@ -37,6 +37,8 @@ using Perpetuum.Players;
 using Perpetuum.RequestHandlers;
 using Perpetuum.RequestHandlers.AdminTools;
 using Perpetuum.RequestHandlers.Channels;
+using Perpetuum.Bootstrapper.Mentoring;
+using Perpetuum.Bootstrapper.Onboarding;
 using Perpetuum.RequestHandlers.Characters;
 using Perpetuum.RequestHandlers.Corporations;
 using Perpetuum.RequestHandlers.Corporations.YellowPages;
@@ -460,6 +462,8 @@ namespace Perpetuum.Bootstrapper
             RegisterTerrains();
             RegisterNpcs();
             RegisterChannelTypes();
+            _builder.RegisterMentoring();
+            _builder.RegisterOnboarding();
             RegisterMtProducts();
             RegisterRifts();
             RegisterRelics();
