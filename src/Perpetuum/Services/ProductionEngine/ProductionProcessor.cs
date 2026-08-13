@@ -584,6 +584,26 @@ namespace Perpetuum.Services.ProductionEngine
 
         public IDictionary<string, object> ResearchItem(ResearchLab researchLab, Character character, Container container, long itemEid, long researchKitEid, bool useCorporationWallet)
         {
+            PublicContainer publicContainer = container as PublicContainer;
+            publicContainer.ThrowIfNull(ErrorCodes.ServerError);
+            return ResearchItemTyped(
+                    researchLab,
+                    character,
+                    publicContainer,
+                    itemEid,
+                    researchKitEid,
+                    useCorporationWallet)
+                .ToDictionary(character);
+        }
+
+        public ResearchProductionResult ResearchItemTyped(
+            ResearchLab researchLab,
+            Character character,
+            PublicContainer container,
+            long itemEid,
+            long researchKitEid,
+            bool useCorporationWallet)
+        {
             var maxSlotCount = researchLab.RealMaxSlotsPerCharacter(character);
             var facilityEid = researchLab.Eid;
             var runningProductionCount = RunningProductions.GetRunningProductionsByFacilityAndCharacter(character, facilityEid).Count();
@@ -680,19 +700,7 @@ namespace Perpetuum.Services.ProductionEngine
 
             newProduction.SendProductionEventToCorporationMembersOnCommitted(Commands.ProductionRemoteStart); 
 
-            var replyDict = new Dictionary<string, object>();
-
-            //return info
-            replyDict.Add(k.production, newProduction.ToDictionary());
-
-            var containerInfo = container.ToDictionary();
-            replyDict.Add(k.sourceContainer, containerInfo);
-
-            //refresh the facility info
-            var facilityInfo = researchLab.GetFacilityInfo(character);
-            replyDict.Add(k.facility, facilityInfo);
-
-            return replyDict;
+            return new ResearchProductionResult(newProduction, researchLab, container);
         }
 
 
@@ -704,6 +712,30 @@ namespace Perpetuum.Services.ProductionEngine
         }
 
         public IDictionary<string, object> LineStartInMill(Character character, Container sourceContainer, int lineId, int cycles, bool useCorporationWallet, bool searchInRobots, Mill mill, int rounds)
+        {
+            PublicContainer publicContainer = sourceContainer as PublicContainer;
+            publicContainer.ThrowIfNull(ErrorCodes.ServerError);
+            return LineStartInMillTyped(
+                    character,
+                    publicContainer,
+                    lineId,
+                    cycles,
+                    useCorporationWallet,
+                    searchInRobots,
+                    mill,
+                    rounds)
+                .ToDictionary(character);
+        }
+
+        public MassProductionResult LineStartInMillTyped(
+            Character character,
+            PublicContainer sourceContainer,
+            int lineId,
+            int cycles,
+            bool useCorporationWallet,
+            bool searchInRobots,
+            Mill mill,
+            int rounds)
         {
             const int maxCycles = 1;
 
@@ -742,29 +774,24 @@ namespace Perpetuum.Services.ProductionEngine
                 throw new PerpetuumException(ErrorCodes.CharacterNotEnoughMoney);
             }
 
-            //return info
-            var replyDict = new Dictionary<string, object>();
-
-            var linesList = mill.GetLinesList(character);
-            replyDict.Add(k.lines, linesList);
-            replyDict.Add(k.lineCount, linesList.Count);
-
-            var productionDict = newProduction.ToDictionary();
-            replyDict.Add(k.production, productionDict);
-
-            var informDict = sourceContainer.ToDictionary();
-            replyDict.Add(k.sourceContainer, informDict);
-
-            var facilityInfo = mill.GetFacilityInfo(character);
-            replyDict.Add(k.facility, facilityInfo);
-
-            replyDict.Add(k.hasBonus, hasBonus);
-
-            return replyDict;
+            return new MassProductionResult(
+                newProduction,
+                mill,
+                sourceContainer,
+                hasBonus);
         }
 
 
         public static IDictionary<string, object> LineQuery(Character character, Container container, long cprgEid, Mill mill)
+        {
+            return GetCalibrationProgramQuote(character, container, cprgEid, mill).ToDictionary();
+        }
+
+        public static CalibrationProgramQuote GetCalibrationProgramQuote(
+            Character character,
+            Container container,
+            long cprgEid,
+            Mill mill)
         {
             var calibrationProgram = (CalibrationProgram) container.GetItemOrThrow(cprgEid);
 
@@ -784,12 +811,15 @@ namespace Perpetuum.Services.ProductionEngine
 
             calibrationProgram.HasComponents.ThrowIfFalse(ErrorCodes.CPRGNotProducible);
 
-            var replyDict = mill.QueryMaterialAndTime(calibrationProgram, character, targetDefinition, calibrationProgram.MaterialEfficiencyPoints, calibrationProgram.TimeEfficiencyPoints);
-
-            replyDict.Add(k.materialEfficiency, calibrationProgram.MaterialEfficiencyPoints);
-            replyDict.Add(k.timeEfficiency, calibrationProgram.TimeEfficiencyPoints);
-
-            return replyDict;
+            return new CalibrationProgramQuote(
+                mill.GetMassProductionQuote(
+                    calibrationProgram,
+                    character,
+                    targetDefinition,
+                    calibrationProgram.MaterialEfficiencyPoints,
+                    calibrationProgram.TimeEfficiencyPoints),
+                calibrationProgram.MaterialEfficiencyPoints,
+                calibrationProgram.TimeEfficiencyPoints);
         }
 
 

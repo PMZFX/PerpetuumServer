@@ -123,16 +123,63 @@ character IDs:
 ## Shared gameplay actions
 
 Autonomous actors must use the same character-bound action services as client
-request handlers. Production refining and prototyping expose typed quote and
-execute operations through this boundary. They retain normal facility access,
-docking, technology, material, slot, credit, wallet, and transaction rules;
-the autonomous source marker is audit metadata and grants no privileges.
+request handlers. Production refining, prototyping, research, calibration-line
+creation, and mass production expose typed quote and execute operations through
+this boundary. The P31 `productionResearchQuery`, `productionResearch`,
+`productionCPRGInfo`, `productionLineCalibrate`,
+`productionQueryLineNextRound`, and `productionLineStart` handlers are protocol
+adapters over those services and retain their existing response dictionaries.
+The shared services retain normal facility access, docking, technology,
+material, slot, credit, personal/corporation wallet, production-time, and
+transaction rules; the autonomous source marker is audit metadata and grants
+no privileges.
 
 The recipe catalog and industry planner are strategic, read-only tools. A plan
 does not reserve materials or authorize production. Before every production
 step, an actor must obtain a character-specific quote and execute it through
 the shared action service. This separation lets long-term planners be replaced
 or extended without creating a second, privileged gameplay implementation.
+
+The opt-in `manufacturer` behavior is the first narrow execution loop. It
+requires a dedicated character, a target definition, quantity, and mill
+facility. Its durable row in `dbo.ai_industry_goal` records the original target
+inventory, selected line, running production, phase, and missing-component
+procurement goals. On every retry it inspects the public terminal container and
+the character's existing running production before acting. A matching running
+job wins over starting another one, so a restart between production commit and
+goal-state persistence cannot duplicate work.
+
+The first loop intentionally uses an existing usable calibration line. It
+obtains a fresh character-specific mass-production quote, compares the quoted
+effective requirements with the real public-container inventory, and starts
+one normal production cycle through the shared action. Missing materials,
+calibration, docking/facility access, money, or another gameplay rejection are
+persisted wait states; no item, credit, line, unlock, or completion is granted.
+The strategic recursive planner may supply procurement leaves when a line is
+missing, but it never authorizes execution. Apply
+`database/overlays/006_ai_industry_goal.sql` before enabling the behavior.
+
+```json
+{
+  "CharacterId": 123,
+  "Enabled": true,
+  "Behavior": "manufacturer",
+  "Manufacturer": {
+    "TargetDefinition": 100,
+    "Quantity": 1,
+    "MillFacilityEid": 456,
+    "UseCorporationWallet": false,
+    "RetrySeconds": 30
+  }
+}
+```
+
+Changing those goal fields does not overwrite an existing durable goal. The
+controller enters `BlockedConfiguration` until the old goal is deliberately
+reviewed. This prevents a configuration edit from silently forgetting work.
+Do not assign `manufacturer` to a miner, trader, mentor, system agent, or other
+owned character merely to exercise the loop; provision and document a
+dedicated normal character instead.
 
 Only dedicated characters should be enabled. A human relay session selecting a
 configured character suspends its autonomous controller; it resumes only after

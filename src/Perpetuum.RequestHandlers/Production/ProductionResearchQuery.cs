@@ -1,16 +1,16 @@
 using Perpetuum.Host.Requests;
+using Perpetuum.Services.Actions;
 using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionResearchQuery : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
+        private readonly IProductionResearchActionService _research;
 
-        public ProductionResearchQuery(ProductionManager productionManager)
+        public ProductionResearchQuery(IProductionResearchActionService research)
         {
-            _productionManager = productionManager;
+            _research = research;
         }
 
         public void HandleRequest(IRequest request)
@@ -18,13 +18,11 @@ namespace Perpetuum.RequestHandlers.Production
             var researchKitDefinition = request.Data.GetOrDefault<int>(k.definition);
             var targetDefinition = request.Data.GetOrDefault<int>(k.target);
             var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-            var character = request.Session.Character;
-
-            var researchLab = _productionManager.GetFacility<ResearchLab>(facilityEid);
-            researchLab.IsOpen.ThrowIfFalse(ErrorCodes.FacilityClosed);
-
-            var replyDict = researchLab.ResearchQuery(character, researchKitDefinition, targetDefinition);
-            Message.Builder.FromRequest(request).WithData(replyDict).Send();
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            ResearchQuote quote = _research.Quote(
+                context,
+                new ProductionResearchQuoteAction(facilityEid, researchKitDefinition, targetDefinition));
+            Message.Builder.FromRequest(request).WithData(quote.ToDictionary()).Send();
         }
     }
 }

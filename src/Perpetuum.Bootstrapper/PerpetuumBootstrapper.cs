@@ -1610,6 +1610,9 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<MarketCreateSellOrderActionService>().As<IMarketCreateSellOrderActionService>();
             _ = _builder.RegisterType<ProductionRefineActionService>().As<IProductionRefineActionService>();
             _ = _builder.RegisterType<ProductionPrototypeActionService>().As<IProductionPrototypeActionService>();
+            _ = _builder.RegisterType<ProductionResearchActionService>().As<IProductionResearchActionService>();
+            _ = _builder.RegisterType<ProductionCalibrationActionService>().As<IProductionCalibrationActionService>();
+            _ = _builder.RegisterType<ProductionMassProductionActionService>().As<IProductionMassProductionActionService>();
             _ = _builder.RegisterType<EquipAmmoActionService>().As<IEquipAmmoActionService>();
             _ = _builder.RegisterType<DockActionService>().As<IDockActionService>();
             _ = _builder.RegisterType<TeleportActionService>().As<ITeleportActionService>();
@@ -1651,6 +1654,9 @@ namespace Perpetuum.Bootstrapper
             _ = _builder.RegisterType<DatabaseAutonomousTradeStateStore>()
                 .As<IAutonomousTradeStateStore>()
                 .SingleInstance();
+            _ = _builder.RegisterType<DatabaseAutonomousIndustryGoalStore>()
+                .As<IAutonomousIndustryGoalStore>()
+                .SingleInstance();
             _ = _builder.RegisterType<AutonomousRegionalMarketService>()
                 .As<IAutonomousRegionalMarketService>();
             _ = _builder.RegisterType<AutonomousTradeExecutionService>()
@@ -1673,6 +1679,10 @@ namespace Perpetuum.Bootstrapper
                 .Keyed<IAutonomousActorBehavior>("mining");
             _ = _builder.RegisterType<TraderAutonomousActorBehavior>()
                 .Keyed<IAutonomousActorBehavior>("trader");
+            _ = _builder.RegisterType<AutonomousIndustryController>()
+                .As<IAutonomousIndustryController>();
+            _ = _builder.RegisterType<ManufacturerAutonomousActorBehavior>()
+                .Keyed<IAutonomousActorBehavior>("manufacturer");
             _ = _builder.Register<AutonomousActorBehaviorFactory>(c =>
             {
                 IComponentContext context = c.Resolve<IComponentContext>();

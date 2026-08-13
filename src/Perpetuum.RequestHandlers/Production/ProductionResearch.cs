@@ -1,39 +1,27 @@
-using Perpetuum.Containers;
-using Perpetuum.Data;
 using Perpetuum.Host.Requests;
-using Perpetuum.Services.ProductionEngine;
-using Perpetuum.Services.ProductionEngine.Facilities;
+using Perpetuum.Services.Actions;
 
 namespace Perpetuum.RequestHandlers.Production
 {
     public class ProductionResearch : IRequestHandler
     {
-        private readonly ProductionManager _productionManager;
-        private readonly ProductionProcessor _productionProcessor;
+        private readonly IProductionResearchActionService _research;
 
-        public ProductionResearch(ProductionManager productionManager,ProductionProcessor productionProcessor)
+        public ProductionResearch(IProductionResearchActionService research)
         {
-            _productionManager = productionManager;
-            _productionProcessor = productionProcessor;
+            _research = research;
         }
 
         public void HandleRequest(IRequest request)
         {
-            using (var scope = Db.CreateTransaction())
-            {
-                var character = request.Session.Character;
-                var itemEid = request.Data.GetOrDefault<long>(k.item);
-                var researchKitEid = request.Data.GetOrDefault<long>(k.researchKitEID);
-                var facilityEid = request.Data.GetOrDefault<long>(k.facility);
-                var useCorporationWallet = request.Data.GetOrDefault<int>(k.useCorporationWallet) == 1;
-
-                _productionManager.PrepareProductionForPublicContainer(facilityEid, character, out ResearchLab researchLab, out PublicContainer container);
-
-                var replyDict = _productionProcessor.ResearchItem(researchLab, character, container, itemEid, researchKitEid, useCorporationWallet);
-                Message.Builder.FromRequest(request).WithData(replyDict).Send();
-                
-                scope.Complete();
-            }
+            var context = new GameActionContext(request.Session.Character, GameActionSource.Client);
+            var action = new ProductionResearchAction(
+                request.Data.GetOrDefault<long>(k.facility),
+                request.Data.GetOrDefault<long>(k.item),
+                request.Data.GetOrDefault<long>(k.researchKitEID),
+                request.Data.GetOrDefault<int>(k.useCorporationWallet) == 1);
+            var result = _research.Execute(context, action);
+            Message.Builder.FromRequest(request).WithData(result.ToDictionary(context.Actor)).Send();
         }
     }
 }

@@ -254,6 +254,39 @@ namespace Perpetuum.Tests.Services.Autonomous
             Assert.Throws<InvalidOperationException>(() => options.Validate(20));
         }
 
+        [Fact]
+        public void ManufacturerRequiresExplicitPersistentGoalAndFacility()
+        {
+            var definition = new AutonomousActorDefinition
+            {
+                CharacterId = 21,
+                Behavior = "manufacturer"
+            };
+            var configuration = new AutonomousConfiguration { Actors = {definition} };
+
+            Assert.Throws<InvalidOperationException>(() => configuration.Validate());
+
+            definition.Manufacturer.TargetDefinition = 100;
+            definition.Manufacturer.MillFacilityEid = 200;
+            configuration.Validate();
+        }
+
+        [Fact]
+        public void ManufacturerRejectsUnsafeQuantityAndRetry()
+        {
+            var options = new AutonomousManufacturerOptions
+            {
+                TargetDefinition = 100,
+                MillFacilityEid = 200,
+                Quantity = 0
+            };
+
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+            options.Quantity = 1;
+            options.RetrySeconds = 1;
+            Assert.Throws<InvalidOperationException>(() => options.Validate(21));
+        }
+
         [Theory]
         [InlineData(1, 48)]
         [InlineData(18, 129)]

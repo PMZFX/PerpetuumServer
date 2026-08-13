@@ -347,12 +347,11 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
         public IDictionary<string, object> ResearchQuery(Character character, int researchKitDefinition, int targetDefinition)
         {
-            var replyDict = new Dictionary<string, object>
-            {
-                {k.researchKitDefinition, researchKitDefinition},
-                {k.itemDefinition, targetDefinition}
-            };
+            return GetResearchQuote(character, researchKitDefinition, targetDefinition).ToDictionary();
+        }
 
+        public ResearchQuote GetResearchQuote(Character character, int researchKitDefinition, int targetDefinition)
+        {
             var researchKitDefault = EntityDefault.Get(researchKitDefinition);
             var itemDefault = EntityDefault.Get(targetDefinition);
 
@@ -379,14 +378,9 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
 
             var researchKitLevel = ResearchKit.GetResearchLevelByDefinition(researchKitDefinition);
 
-            replyDict.Add(k.researchKitLevel, researchKitLevel);
-
             var isPrototypeItem = ProductionDataAccess.IsPrototypeDefinition(targetDefinition);
 
             Logger.Info("item definition: " + EntityDefault.Get(targetDefinition).Name + " isPrototype:" + isPrototypeItem);
-
-            var nominalDict = new Dictionary<string, object>();
-            var realDict = new Dictionary<string, object>();
 
             //match research levels
             var itemLevel = ProductionDataAccess.GetResearchLevel(targetDefinition);
@@ -436,26 +430,22 @@ namespace Perpetuum.Services.ProductionEngine.Facilities
                 nominalResearchTimeSeconds = 10;
             }
 
-            //collect definition related
-            replyDict.Add(k.calibrationProgram, itemResearchLevel.calibrationProgramDefinition);
-
-            //collect real
-            realDict.Add(k.price, (long) price);
-            realDict.Add(k.researchTime, researchTimeSeconds);
-            realDict.Add(k.materialEfficiency, materialEfficiency);
-            realDict.Add(k.timeEfficiency, timeEfficiency);
-
-            //collect nominal
-            nominalDict.Add(k.price, (long) nominalPrice);
-            nominalDict.Add(k.researchTime, nominalResearchTimeSeconds);
-            nominalDict.Add(k.materialEfficiency, nominalMaterialEfficiency);
-            nominalDict.Add(k.timeEfficiency, nominalTimeEfficiency);
-
-            replyDict.Add(k.real, realDict);
-            replyDict.Add(k.nominal, nominalDict);
-            replyDict.Add(k.facility, Eid);
-
-            return replyDict;
+            return new ResearchQuote(
+                researchKitDefinition,
+                targetDefinition,
+                researchKitLevel,
+                outputDefinition,
+                new ResearchQuoteValues(
+                    (long)price,
+                    researchTimeSeconds,
+                    materialEfficiency,
+                    timeEfficiency),
+                new ResearchQuoteValues(
+                    (long)nominalPrice,
+                    nominalResearchTimeSeconds,
+                    nominalMaterialEfficiency,
+                    nominalTimeEfficiency),
+                Eid);
         }
     }
 }
